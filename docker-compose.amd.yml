@@ -1,0 +1,11 @@
+# docker-compose.amd.yml
+version: "3.8"
+
+services:
+  ai-delver-intelligence:
+    devices:
+      - "/dev/kfd:/dev/kfd"
+      - "/dev/dri:/dev/dri"
+    group_add:
+      - video
+      - render

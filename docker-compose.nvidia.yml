@@ -1,0 +1,12 @@
+# docker-compose.nvidia.yml
+version: "3.8"
+
+services:
+  ai-delver-intelligence:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
