@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "intelligence"
+version = "0.1.0"
+description = "Ai content of Ai Delver Sandbox."
+authors = ["Dante Ferreira"]
+package-mode = false 
+
+[tool.poetry.dependencies]
+dill = "*"
+python = "==3.11.7"
+numpy = "*"
+tensorflow = "==2.15.0"
+six = "*"
+fastapi = "==0.95.2"
+pydantic = "==1.10.14"
+typing-extensions = "==4.5.0"
+pydantic_core = "*"
+uvicorn = "*"
+exceptiongroup = "*"
+websockets = "*"
+tf-agents = "==0.19.0"
+keras = "*"
+runtime = { path = "./ai-delver-runtime", develop = true }
+level = { path = "./ai-delver-level", develop = true }
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
