@@ -1,26 +1,19 @@
-import tensorflow as tf
 from tf_agents.environments import TFPyEnvironment, parallel_py_environment
-from tf_agents.agents.ppo import ppo_agent
 from tf_agents.drivers import dynamic_episode_driver
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.system import multiprocessing as mp
 from tf_agents.utils import common
-
 from ai.environments.level.environment import LevelEnvironment
 from ai.agents import PPOAgentFactory
-import json
-
-with open("src/ai/utils/config.json", "r") as f:
-    config = json.load(f)
-
-LEARNING_RATE = config["learning_rate"]
-GAMMA = config["gamma"]
-NUM_ITERATIONS = config["num_iterations"]
-REPLAY_BUFFER_CAPACITY = config["replay_buffer_capacity"]
-LOG_INTERVAL = config["log_interval"]
-ENV_BATCH_SIZE = config["env_batch_size"]
-COLLECT_STEPS_PER_ITERATION = config["collect_steps_per_iteration"]
-# NUM_EPOCHS = config["num_epochs"]
+from ai.config import (
+    LEARNING_RATE,
+    GAMMA,
+    NUM_ITERATIONS,
+    REPLAY_BUFFER_CAPACITY,
+    LOG_INTERVAL,
+    ENV_BATCH_SIZE,
+    COLLECT_STEPS_PER_ITERATION,
+)
 
 
 class TrainerController:
@@ -37,7 +30,6 @@ class TrainerController:
         # Wrap them in a TensorFlow environment
         self.train_env = TFPyEnvironment(py_env)
 
-        # Create the PPO agent
         self.agent = PPOAgentFactory(
             self.train_env, learning_rate=LEARNING_RATE, gamma=GAMMA
         ).get_agent()
@@ -56,7 +48,7 @@ class TrainerController:
             self.train_env,
             self.agent.collect_policy,  # Use the agent's policy for collection
             observers=[self.replay_buffer.add_batch],
-            num_episodes=COLLECT_STEPS_PER_ITERATION,  # Collect this many episodes
+            num_episodes=COLLECT_STEPS_PER_ITERATION,
         )
 
     def train(self):

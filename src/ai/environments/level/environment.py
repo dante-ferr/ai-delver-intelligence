@@ -1,17 +1,15 @@
 from tf_agents.environments import PyEnvironment
 from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
-import numpy as np
-from typing import cast, Any
 from tf_agents.typing.types import NestedArraySpec
+import numpy as np
+from typing import cast, Any, TYPE_CHECKING
 import time
 import math
 from functools import cached_property
 from multiprocessing import Manager
-from runtime.simulation import Simulation
+from .simulation import Simulation, DelverAction
 from level_holder import level_holder
-from typing import TYPE_CHECKING
-from runtime.simulation import DelverAction
 from ._logger import LevelEnvironmentLogger
 
 if TYPE_CHECKING:
@@ -119,7 +117,7 @@ class LevelEnvironment(PyEnvironment):
         reward, self.episode_ended, elapsed_time = self.simulation.step(action_dict)
 
         if self.env_id == 0:
-            self.logger.handle_step(
+            self.logger.log_step(
                 reward=reward,
                 move=action_dict["move"],
                 move_angle=action_dict["move_angle"],

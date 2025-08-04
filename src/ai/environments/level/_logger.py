@@ -63,7 +63,7 @@ class LevelEnvironmentLogger:
     def log_episode_start(self, episode):
         self.logger.info("Episode start", extra={"episode": episode})
 
-    def handle_step(
+    def log_step(
         self, reward, move, move_angle, delver_position, global_frame_count, fps
     ):
         current_time = time.time()

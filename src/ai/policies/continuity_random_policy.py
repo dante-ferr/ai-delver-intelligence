@@ -7,12 +7,7 @@ from tf_agents.specs import tensor_spec
 import random
 import json
 from ai.utils import create_action_policy_step
-
-with open("src/ai/utils/config.json", "r") as f:
-    config = json.load(f)
-
-ENV_BATCH_SIZE = config["env_batch_size"]
-SEED = config["seed"]
+from ai.config import ENV_BATCH_SIZE, SEED
 
 random.seed(SEED)
 

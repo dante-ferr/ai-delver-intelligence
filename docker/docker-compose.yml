@@ -1,0 +1,20 @@
+services:
+  ai-delver-intelligence:
+    image: ai-delver-intelligence
+    container_name: ai-delver-intelligence
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: production
+      args:
+        BASE_IMAGE: ${BASE_IMAGE_VAR}
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    ports:
+      - "8001:8001"
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/ai-delver-runtime:/ai-delver-level:/pytiling-lib:/pyglet-dragonbones-lib
+    command: ["python3", "src/main.py"]
+    stdin_open: true
+    tty: true

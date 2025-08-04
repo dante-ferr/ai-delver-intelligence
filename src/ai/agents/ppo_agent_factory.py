@@ -8,18 +8,10 @@ from typing import TYPE_CHECKING
 from ..utils import get_specs_from
 import json
 import keras
+from ai.config import LEARNING_RATE, GAMMA, ENTROPY_REGULARIZATION
 
 if TYPE_CHECKING:
     from tf_agents.environments.tf_py_environment import TFPyEnvironment
-
-
-with open("src/ai/utils/config.json", "r") as f:
-    config = json.load(f)
-
-LEARNING_RATE = config["learning_rate"]
-GAMMA = config["gamma"]
-ENTROPY_REGULARIZATION = config["entropy_regularization"]
-
 
 def check_gpu_available():
     if tf.test.is_gpu_available():
