@@ -15,6 +15,8 @@ from ._logger import LevelEnvironmentLogger
 
 if TYPE_CHECKING:
     from .. import DelverObservation
+    from typing import Any
+
 
 SIMULATION_WS_URL = "ws://host.docker.internal:8000/ws/simulation"
 
@@ -24,13 +26,16 @@ frame_lock = manager.Lock()
 
 
 class LevelEnvironment(PyEnvironment):
-    def __init__(self, env_id: int = 0):
+
+    def __init__(self, env_id: int = 0, replay_queue: "Any | None" = None):
         self.env_id = env_id
         self.last_action: dict[str, Any] = {
             "move": 0.0,
             "move_angle_sin": 0.0,
             "move_angle_cos": 0.0,
         }
+        self.replay_queue = replay_queue
+
         self._restart_simulation()
         self.episodes = 0
 
@@ -48,6 +53,8 @@ class LevelEnvironment(PyEnvironment):
         self.fps = 0.0
 
     def _restart_simulation(self):
+        if not level_holder.level:
+            raise Exception("No level is loaded into the environment.")
         self.simulation = Simulation(level_holder.level)
 
     def _init_specs(self):
@@ -82,6 +89,7 @@ class LevelEnvironment(PyEnvironment):
     def _reset(self):
         self.episodes += 1
         self.episode_ended = False
+
         self._restart_simulation()
 
         if self.env_id == 0:
@@ -111,6 +119,9 @@ class LevelEnvironment(PyEnvironment):
         self._count_frame()
 
         if self.episode_ended:
+            if self.replay_queue:
+                self.replay_queue.put(self.simulation.episode_trajectory.to_json())
+
             return self._reset()
 
         action_dict = self._get_dict_of_action(action)

@@ -18,24 +18,61 @@ from ai.config import (
     ENV_BATCH_SIZE,
     COLLECT_STEPS_PER_ITERATION,
 )
+from multiprocessing import Process, Manager
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from api.connection_manager import ConnectionManager
 
 
-class TrainerController:
+def _create_level_environment(env_id: int, replay_queue=None):
+    """Factory function for creating an environment."""
+    return LevelEnvironment(env_id=env_id, replay_queue=replay_queue)
+
+
+def replay_queue_worker(replay_queue, connection_manager):
+    """
+    A worker function that runs in a separate process.
+    It continuously checks the queue and sends replays.
+    """
+    import asyncio
+
+    async def send_data(data):
+        if connection_manager:
+            await connection_manager.send_replay_data(data)
+
+    print("▶️ Replay worker process started.")
+    while True:
+        if not replay_queue.empty():
+            replay_data = replay_queue.get()
+            asyncio.run(send_data(replay_data))
+
+
+class Trainer:
     def __init__(self):
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         log_dir = "logs/train/" + current_time
         self.summary_writer = create_file_writer(log_dir)
 
+        self.manager = Manager()
+        self.replay_queue = self.manager.Queue()
+
         mp.enable_interactive_mode()
         self._setup_env_and_agent()
 
     def _setup_env_and_agent(self):
-        # Create parallel Python environments
+        # Parallel environments creation
+        replay_queue = self.replay_queue
         py_env = parallel_py_environment.ParallelPyEnvironment(
-            [lambda i=i: LevelEnvironment(env_id=i) for i in range(ENV_BATCH_SIZE)],
+            [
+                lambda i=i: _create_level_environment(
+                    env_id=i, replay_queue=replay_queue
+                )
+                for i in range(ENV_BATCH_SIZE)
+            ],
             start_serially=False,
         )
-        # Wrap them in a TensorFlow environment
+
         self.train_env = TFPyEnvironment(py_env)
 
         self.agent = PPOAgentFactory(
@@ -71,52 +108,44 @@ class TrainerController:
             num_episodes=COLLECT_STEPS_PER_ITERATION,
         )
 
-    def train(self):
+    def train(self, connection_manager: "None | ConnectionManager" = None):
         print(f"Starting training for {NUM_ITERATIONS} iterations...")
-        # The driver runs the whole collection phase in optimized TensorFlow graph mode
         self.driver.run = common.function(self.driver.run)
+
+        # Start the replay worker in a separate, daemonic process
+        replay_process = Process(
+            target=replay_queue_worker,
+            args=(self.replay_queue, connection_manager),
+            daemon=True,  # This ensures the process exits when the main script does
+        )
+        replay_process.start()
 
         with self.summary_writer.as_default():
             for iteration in range(NUM_ITERATIONS):
-                # 1. Collect experience
                 self.driver.run()
-
-                # 2. Prepare and train
                 experience = self.replay_buffer.gather_all()
                 loss_info = self.agent.train(experience)
                 self.replay_buffer.clear()
 
-                # Get the current training step
                 step = self.agent.train_step_counter
-
                 if iteration % LOG_INTERVAL == 0:
                     print(
                         f"Iteration {iteration}: Step = {step}, Loss = {loss_info.loss.numpy()}"
                     )
-
-                    # --- Log Metrics to TensorBoard ---
-                    avg_return = self.avg_return_metric.result()
-                    tf.summary.scalar("average_return", avg_return, step=step)
-                    self.avg_return_metric.reset()  # Reset for the next interval
-
-                    avg_length = self.avg_episode_length_metric.result()
-                    tf.summary.scalar("average_episode_length", avg_length, step=step)
-                    self.avg_episode_length_metric.reset()
-
-                    tf.summary.scalar("loss", loss_info.loss, step=step)
+                    self._handle_tensorboard(loss_info, step)
 
         print("Training finished.")
 
+    def _handle_tensorboard(self, loss_info, step):
+        avg_return = self.avg_return_metric.result()
+        tf.summary.scalar("average_return", avg_return, step=step)
+        self.avg_return_metric.reset()  # Reset for the next interval
+
+        avg_length = self.avg_episode_length_metric.result()
+        tf.summary.scalar("average_episode_length", avg_length, step=step)
+        self.avg_episode_length_metric.reset()
+
+        tf.summary.scalar("loss", loss_info.loss, step=step)
+
     def reset(self):
         self._setup_env_and_agent()
-
-    # @property
-    # def _initial_policy(self):
-    #     policy_factories = {
-    #         "continuity": lambda: ContinuityRandomPolicy(
-    #             self.train_env.time_step_spec(),
-    #             self.train_env.action_spec(),
-    #             self.train_env,
-    #         )
-    #     }
-    #     return policy_factories[INITIAL_POLICY_NAME]()

@@ -19,6 +19,7 @@ uvicorn = "*"
 tensorboard = "*"
 exceptiongroup = "*"
 tf-agents = "==0.19.0"
+websockets = "*"
 keras = "*"
 runtime = { path = "../ai-delver-runtime", develop = true }
 level = { path = "../ai-delver-level", develop = true }

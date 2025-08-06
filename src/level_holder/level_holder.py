@@ -1,6 +1,11 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from level import Level
+
 class LevelHolder:
     def __init__(self):
-        self._level = None
+        self._level: "Level | None" = None
 
     @property
     def level(self):
