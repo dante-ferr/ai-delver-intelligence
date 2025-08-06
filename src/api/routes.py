@@ -18,7 +18,6 @@ def train_agent(payload: TrainPayload):
         raw_bytes = base64.b64decode(payload.level)
         level_obj = dill.loads(raw_bytes)
     except Exception:
-        raise Exception
         raise HTTPException(status_code=400, detail="Invalid level data")
 
     level_holder.level = level_obj

@@ -1578,7 +1578,7 @@ name = "runtime"
 version = "0.1.0"
 description = "Runtime engine for AI Delver"
 optional = false
-python-versions = ">=3.10.0"
+python-versions = ">=3.8.0"
 groups = ["main"]
 files = []
 develop = true
@@ -2029,4 +2029,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10.0,<3.12"
-content-hash = "923e30b6e7b1289981577652e45c4f2c85d6757258f1f15f1bd71d0c7868ea0f"
+content-hash = "5d185a540bbe0eb7ee59472f8e89f85fd856a728c8390f66e479f74a10e7cca7"

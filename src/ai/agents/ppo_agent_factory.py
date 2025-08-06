@@ -70,6 +70,7 @@ class PPOAgentFactory:
         )
 
         optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
+
         self.agent = ppo_agent.PPOAgent(
             time_step_spec,
             action_spec,
@@ -79,7 +80,7 @@ class PPOAgentFactory:
             normalize_observations=True,
             normalize_rewards=True,
             discount_factor=gamma,
-            train_step_counter=tf.Variable(0),
+            train_step_counter=tf.Variable(0, dtype=tf.int64),
             entropy_regularization=ENTROPY_REGULARIZATION,
             use_gae=True,
             use_td_lambda_return=True,

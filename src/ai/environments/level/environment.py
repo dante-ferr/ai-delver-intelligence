@@ -8,7 +8,8 @@ import time
 import math
 from functools import cached_property
 from multiprocessing import Manager
-from .simulation import Simulation, DelverAction
+from .simulation import Simulation
+from runtime.episode_trajectory import DelverAction
 from level_holder import level_holder
 from ._logger import LevelEnvironmentLogger
 
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
 SIMULATION_WS_URL = "ws://host.docker.internal:8000/ws/simulation"
 
 manager = Manager()
-frame_counter = manager.Value("i", 0)
+global_frame_counter = manager.Value("i", 0)
 frame_lock = manager.Lock()
 
 
@@ -34,7 +35,8 @@ class LevelEnvironment(PyEnvironment):
         self.episodes = 0
 
         # self.pathfinder = Pathfinder(self)
-        self.logger = LevelEnvironmentLogger(env_id)
+        if self.env_id == 0:
+            self.logger = LevelEnvironmentLogger()
 
         self._init_specs()
 
@@ -42,7 +44,7 @@ class LevelEnvironment(PyEnvironment):
         self.last_fps_time = time.time()
 
         with frame_lock:
-            self.last_frame_count = frame_counter.value
+            self.last_frame_count = global_frame_counter.value
         self.fps = 0.0
 
     def _restart_simulation(self):
@@ -82,19 +84,18 @@ class LevelEnvironment(PyEnvironment):
         self.episode_ended = False
         self._restart_simulation()
 
-        self.current_waypoint_index = 0
-
-        self.logger.log_episode_start(self.episodes)
+        if self.env_id == 0:
+            self.logger.log_episode_start(self.episodes)
 
         return ts.restart(self.observation)
 
     def _count_frame(self):
         with frame_lock:
-            frame_counter.value += 1
+            global_frame_counter.value += 1
 
     def _calculate_fps(self):
         with frame_lock:
-            current_frame = frame_counter.value
+            current_frame = global_frame_counter.value
         current_time = time.time()
 
         time_delta = current_time - self.last_fps_time
@@ -113,7 +114,6 @@ class LevelEnvironment(PyEnvironment):
             return self._reset()
 
         action_dict = self._get_dict_of_action(action)
-
         reward, self.episode_ended, elapsed_time = self.simulation.step(action_dict)
 
         if self.env_id == 0:
@@ -122,7 +122,8 @@ class LevelEnvironment(PyEnvironment):
                 move=action_dict["move"],
                 move_angle=action_dict["move_angle"],
                 delver_position=self.observation["delver_position"],
-                global_frame_count=frame_counter.value,
+                global_frame_count=global_frame_counter.value,
+                simulation_frame=self.simulation.frame,
                 fps=self._calculate_fps(),
             )
 
@@ -138,7 +139,10 @@ class LevelEnvironment(PyEnvironment):
 
     def _create_time_step(self, reward):
         if self.episode_ended:
-            self.logger.log_episode_end(self.episodes, reward)
+            if self.env_id == 0:
+                self.logger.log_episode_end(
+                    episode=self.episodes, reward=self.simulation.total_reward
+                )
             return ts.termination(self.observation, reward)
         return ts.transition(self.observation, reward, 1.0)
 

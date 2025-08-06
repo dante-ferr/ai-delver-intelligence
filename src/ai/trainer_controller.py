@@ -1,10 +1,14 @@
+import tensorflow as tf
 from tf_agents.environments import TFPyEnvironment, parallel_py_environment
 from tf_agents.drivers import dynamic_episode_driver
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.system import multiprocessing as mp
 from tf_agents.utils import common
+from tf_agents.metrics import tf_metrics
 from ai.environments.level.environment import LevelEnvironment
+import datetime
 from ai.agents import PPOAgentFactory
+from tensorflow.summary import create_file_writer  # type: ignore
 from ai.config import (
     LEARNING_RATE,
     GAMMA,
@@ -18,6 +22,10 @@ from ai.config import (
 
 class TrainerController:
     def __init__(self):
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        log_dir = "logs/train/" + current_time
+        self.summary_writer = create_file_writer(log_dir)
+
         mp.enable_interactive_mode()
         self._setup_env_and_agent()
 
@@ -43,11 +51,23 @@ class TrainerController:
             max_length=REPLAY_BUFFER_CAPACITY,
         )
 
-        # Create a driver to run the collection loop efficiently
+        # Create metrics to track the return (total reward) and episode length
+        self.avg_return_metric = tf_metrics.AverageReturnMetric(
+            batch_size=ENV_BATCH_SIZE
+        )
+        self.avg_episode_length_metric = tf_metrics.AverageEpisodeLengthMetric(
+            batch_size=ENV_BATCH_SIZE
+        )
+
         self.driver = dynamic_episode_driver.DynamicEpisodeDriver(
             self.train_env,
-            self.agent.collect_policy,  # Use the agent's policy for collection
-            observers=[self.replay_buffer.add_batch],
+            self.agent.collect_policy,
+            # Add the metrics to the driver's observers list
+            observers=[
+                self.replay_buffer.add_batch,
+                self.avg_return_metric,
+                self.avg_episode_length_metric,
+            ],
             num_episodes=COLLECT_STEPS_PER_ITERATION,
         )
 
@@ -56,21 +76,34 @@ class TrainerController:
         # The driver runs the whole collection phase in optimized TensorFlow graph mode
         self.driver.run = common.function(self.driver.run)
 
-        for iteration in range(NUM_ITERATIONS):
-            # 1. Collect a few episodes of experience using the current policy
-            self.driver.run()
+        with self.summary_writer.as_default():
+            for iteration in range(NUM_ITERATIONS):
+                # 1. Collect experience
+                self.driver.run()
 
-            # 2. Prepare the collected data for training
-            experience = self.replay_buffer.gather_all()
+                # 2. Prepare and train
+                experience = self.replay_buffer.gather_all()
+                loss_info = self.agent.train(experience)
+                self.replay_buffer.clear()
 
-            # 3. Train the agent on this data for a few epochs
-            loss_info = self.agent.train(experience)
+                # Get the current training step
+                step = self.agent.train_step_counter
 
-            # 4. Clear the buffer for the next collection phase
-            self.replay_buffer.clear()
+                if iteration % LOG_INTERVAL == 0:
+                    print(
+                        f"Iteration {iteration}: Step = {step}, Loss = {loss_info.loss.numpy()}"
+                    )
 
-            if iteration % LOG_INTERVAL == 0:
-                print(f"Iteration {iteration}: Loss = {loss_info.loss.numpy()}")
+                    # --- Log Metrics to TensorBoard ---
+                    avg_return = self.avg_return_metric.result()
+                    tf.summary.scalar("average_return", avg_return, step=step)
+                    self.avg_return_metric.reset()  # Reset for the next interval
+
+                    avg_length = self.avg_episode_length_metric.result()
+                    tf.summary.scalar("average_episode_length", avg_length, step=step)
+                    self.avg_episode_length_metric.reset()
+
+                    tf.summary.scalar("loss", loss_info.loss, step=step)
 
         print("Training finished.")
 

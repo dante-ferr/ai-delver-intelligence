@@ -1,30 +1,71 @@
 from runtime import Runtime
-import json
-from os import path
-from .delver_action import DelverAction
-from ai.config import FPS
+from runtime.episode_trajectory import EpisodeTrajectory
+from ai.config import (
+    FPS,
+    FRAMES_PER_ACTION,
+    FINISHED_REWARD,
+    TURN_PENALTY_MULTIPLIER,
+    MAX_FRAMES_PER_EPISODE,
+    NOT_FINISHED_REWARD,
+    FRAME_STEP_REWARD,
+    TILE_EXPLORATION_REWARD,
+)
+from typing import TYPE_CHECKING
+from ._exploration_grid import ExplorationGrid
+
+if TYPE_CHECKING:
+    from level import Level
+    from runtime.episode_trajectory import DelverAction
 
 
-DT = 1 / FPS * 3
+DT = 1 / FPS * FRAMES_PER_ACTION
 
 
 class Simulation(Runtime):
-    def __init__(self, level):
+
+    def __init__(self, level: "Level"):
         super().__init__(level, render=False)
 
         self.elapsed_time = 0.0
-        self.delver_actions: list[DelverAction] = []
+        self.frame = 0
 
-        self.last_action: None | DelverAction = None
+        self.total_reward = 0
 
-    def step(self, action: DelverAction):
-        self.add_delver_action(action)
+        self.exploration_grid = ExplorationGrid(level.map.size[0], level.map.size[1])
+
+        self.episode_trajectory = EpisodeTrajectory()
+        self.last_action: "None | DelverAction" = None
+
+    def step(self, action: "DelverAction"):
+        """
+        Handles an action from the delver on each step and updates the simulation.
+        """
+
+        self.episode_trajectory.add_delver_action(action)
 
         if action["move"]:
             self.delver.move(DT, action["move_angle"])
 
-        ended = self.delver.check_collision(self.goal)
-        reward = 500.0 if ended else 0
+        self.last_action = action
+        self.update(DT)
+
+        reward = self._get_reward(action)
+        self.total_reward += reward
+
+        self.frame += 1
+
+        if self.ended:
+            self._end()
+
+        return reward, self.ended, self.elapsed_time
+
+    def _get_reward(self, action: "DelverAction"):
+        reward = 0
+
+        if self.reached_goal:
+            reward += FINISHED_REWARD
+        elif self.time_is_over:
+            reward += NOT_FINISHED_REWARD
 
         if self.last_action and self.last_action["move"] and action["move"]:
             angle_diff = (
@@ -33,17 +74,32 @@ class Simulation(Runtime):
 
             # Penalize for turning. The penalty is proportional to the change in angle.
             # Max penalty is 1.0 for a 180 degree turn.
-            reward -= abs(angle_diff) / 180.0
+            reward -= (abs(angle_diff) / 180.0) * TURN_PENALTY_MULTIPLIER
 
-        self.last_action = action
-        self.update(DT)
+        reward += FRAME_STEP_REWARD
 
-        return reward, ended, self.elapsed_time
+        new_explorated_tile = self.exploration_grid.step_on(self.delver.position)
+        if new_explorated_tile:
+            reward += TILE_EXPLORATION_REWARD
+
+        return reward
+
+    def _end(self):
+        pass
+
+    @property
+    def ended(self):
+        return self.reached_goal or self.time_is_over
+
+    @property
+    def reached_goal(self):
+        return self.delver.check_collision(self.goal)
+
+    @property
+    def time_is_over(self):
+        return self.frame >= MAX_FRAMES_PER_EPISODE
 
     def update(self, dt):
         super().update(dt)
 
         self.elapsed_time += dt
-
-    def add_delver_action(self, action: DelverAction):
-        self.delver_actions.append(DelverAction(**action))
