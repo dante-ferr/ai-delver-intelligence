@@ -23,7 +23,10 @@ async def train_agent(request: TrainRequest, background_tasks: BackgroundTasks):
     level_data = dill.loads(base64.b64decode(request.level))
 
     new_session = session_manager.create_session(level_data)
-    background_tasks.add_task(run_training_in_background, new_session.session_id)
+
+    loop = asyncio.get_running_loop()
+
+    background_tasks.add_task(run_training_in_background, new_session.session_id, loop)
 
     return {"message": "Training started.", "session_id": new_session.session_id}
 
@@ -45,12 +48,9 @@ async def websocket_replay_endpoint(websocket: WebSocket, session_id: str):
     replay_queue = session.replay_queue
 
     try:
-        logging.info(f"WebSocket {session_id}: Listening for replay data.")
         while True:
             json_string = await replay_queue.get()
 
-            logging.info(f"WebSocket {session_id}: Data received. Sending to client.")
-            print(json_string)
             await websocket.send_text(json_string)
 
     except asyncio.CancelledError:

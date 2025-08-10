@@ -3,6 +3,7 @@ from tf_agents.networks import (
     actor_distribution_network,
     value_network,
 )
+from tf_agents.networks import encoding_network
 import tensorflow as tf
 from typing import TYPE_CHECKING
 from ..utils import get_specs_from
@@ -49,10 +50,12 @@ class PPOAgentFactory:
             "walls": walls_preprocessing,
             "delver_position": position_preprocessing,
             "goal_position": position_preprocessing,
+            "replay_json": keras.layers.Lambda(
+                lambda x: tf.zeros(shape=(tf.shape(x)[0], 0))  # type: ignore
+            ),
         }
 
         preprocessing_combiner = keras.layers.Concatenate()
-
         time_step_spec, action_spec, observation_spec = get_specs_from(train_env)
 
         actor_net = actor_distribution_network.ActorDistributionNetwork(
@@ -77,7 +80,7 @@ class PPOAgentFactory:
             actor_net=actor_net,
             value_net=value_net,
             optimizer=optimizer,
-            normalize_observations=True,
+            normalize_observations=False,
             normalize_rewards=True,
             discount_factor=gamma,
             train_step_counter=tf.Variable(0, dtype=tf.int64),
@@ -87,7 +90,7 @@ class PPOAgentFactory:
         )
 
         self.agent.initialize()
-        check_gpu_available()  # Check if GPU is used after agent is initialized
+        check_gpu_available()
 
     def get_agent(self):
         return self.agent

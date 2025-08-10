@@ -6,3 +6,4 @@ class DelverObservation(TypedDict):
     walls: np.ndarray
     delver_position: np.ndarray
     goal_position: np.ndarray
+    replay_json: np.ndarray

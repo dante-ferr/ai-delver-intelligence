@@ -8,50 +8,45 @@ import time
 import math
 import dill
 from functools import cached_property
-
 from .simulation import Simulation
 from runtime.episode_trajectory import DelverAction
 from ._logger import LevelEnvironmentLogger
+from ai.sessions import REGISTRY_LOCK, SESSION_REGISTRY
+
 
 if TYPE_CHECKING:
     from level import Level
     from ._delver_observation import DelverObservation
-    from multiprocessing.managers import ValueProxy
 
 class LevelEnvironment(PyEnvironment):
 
-    def __init__(
-        self,
-        env_id: int,
-        level_bytes: bytes,
-        replay_queue,
-        frame_counter: "ValueProxy",
-        frame_lock,
-    ):
-        self.env_id = env_id
-        self.level: "Level" = dill.loads(level_bytes)
-        self.replay_queue = replay_queue
+    def __init__(self, env_id: int, level_bytes: bytes, session_id: str):
+        self._env_id = env_id
+        self._level: "Level" = dill.loads(level_bytes)
+        self._session_id = session_id
 
-        # Store shared objects as instance attributes
-        self.global_frame_counter = frame_counter
-        self.frame_lock = frame_lock
+        with REGISTRY_LOCK:
+            session_objects = SESSION_REGISTRY[self._session_id]
+
+        self._global_frame_counter = session_objects["frame_counter"]
+        self._global_frame_lock = session_objects["frame_lock"]
+        with self._global_frame_lock:
+            self._last_frame_count = self._global_frame_counter.value
 
         self._restart_simulation()
-        self.episodes = 0
+        self._episodes = 0
 
-        if self.env_id == 0:
-            self.logger = LevelEnvironmentLogger()
+        if self._env_id == 0:
+            self._logger = LevelEnvironmentLogger()
 
         self._init_specs()
-        self.episode_ended = False
-        self.last_fps_time = time.time()
+        self._episode_ended = False
+        self._last_fps_time = time.time()
 
-        with self.frame_lock:
-            self.last_frame_count = self.global_frame_counter.value
         self.fps = 0.0
 
     def _restart_simulation(self):
-        self.simulation = Simulation(self.level)
+        self.simulation = Simulation(self._level)
 
     def _init_specs(self):
         self._action_spec = {
@@ -75,6 +70,9 @@ class LevelEnvironment(PyEnvironment):
             "goal_position": array_spec.ArraySpec(
                 shape=(2,), dtype=np.float32, name="goal_position"
             ),
+            "replay_json": array_spec.ArraySpec(
+                shape=(), dtype=str, name="replay_json"
+            ),
         }
 
     def action_spec(self):
@@ -84,47 +82,45 @@ class LevelEnvironment(PyEnvironment):
         return cast(NestedArraySpec, self._observation_spec)
 
     def _reset(self):
-        self.episodes += 1
-        self.episode_ended = False
+        self._episodes += 1
+        self._episode_ended = False
         self._restart_simulation()
-        if self.env_id == 0:
-            self.logger.log_episode_start(self.episodes)
+        if self._env_id == 0:
+            self._logger.log_episode_start(self._episodes)
         return ts.restart(self.observation)
 
     def _count_frame(self):
-        with self.frame_lock:
-            self.global_frame_counter.value += 1
+        with self._global_frame_lock:
+            self._global_frame_counter.value += 1
 
     def _calculate_fps(self):
-        with self.frame_lock:
-            current_frame = self.global_frame_counter.value
+        with self._global_frame_lock:
+            current_frame = self._global_frame_counter.value
         current_time = time.time()
-        time_delta = current_time - self.last_fps_time
-        frame_delta = current_frame - self.last_frame_count
+        time_delta = current_time - self._last_fps_time
+        frame_delta = current_frame - self._last_frame_count
         if time_delta == 0:
             return self.fps
         self.fps = frame_delta / time_delta
-        self.last_fps_time = current_time
-        self.last_frame_count = current_frame
+        self._last_fps_time = current_time
+        self._last_frame_count = current_frame
         return self.fps
 
     def _step(self, action):
         self._count_frame()
-        if self.episode_ended:
-            if self.replay_queue:
-                self.replay_queue.put(self.simulation.episode_trajectory.to_json())
+        if self._episode_ended:
             return self._reset()
 
         action_dict = self._get_dict_of_action(action)
-        reward, self.episode_ended, _ = self.simulation.step(action_dict)
+        reward, self._episode_ended, _ = self.simulation.step(action_dict)
 
-        if self.env_id == 0:
-            self.logger.log_step(
+        if self._env_id == 0:
+            self._logger.log_step(
                 reward=reward,
                 move=action_dict["move"],
                 move_angle=action_dict["move_angle"],
                 delver_position=self.observation["delver_position"],
-                global_frame_count=self.global_frame_counter.value,
+                global_frame_count=self._global_frame_counter.value,
                 simulation_frame=self.simulation.frame,
                 fps=self._calculate_fps(),
             )
@@ -139,21 +135,28 @@ class LevelEnvironment(PyEnvironment):
         )
 
     def _create_time_step(self, reward):
-        if self.episode_ended:
-            if self.env_id == 0:
-                self.logger.log_episode_end(
-                    episode=self.episodes, reward=self.simulation.total_reward
+        if self._episode_ended:
+            if self._env_id == 0:
+                self._logger.log_episode_end(
+                    episode=self._episodes, reward=self.simulation.total_reward
                 )
             return ts.termination(self.observation, reward)
         return ts.transition(self.observation, reward, 1.0)
 
     @property
     def observation(self) -> "DelverObservation":
+        replay_data_str = ""
+
+        if self._episode_ended:
+            replay_data_str = self.simulation.episode_trajectory.to_json()
+
         walls_layer = self.walls_grid.astype(np.float32)
+
         return {
             "walls": np.array(walls_layer, dtype=np.float32),
             "delver_position": np.array([*self.delver_position], dtype=np.float32),
             "goal_position": np.array([*self.goal_position], dtype=np.float32),
+            "replay_json": np.array(replay_data_str, dtype=str),
         }
 
     @cached_property

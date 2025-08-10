@@ -13,27 +13,20 @@ from ai.agents import PPOAgentFactory
 from tensorflow.summary import create_file_writer  # type: ignore
 from ai.config import *
 from tf_agents.environments import tf_py_environment
+from ._web_socket_observer import WebSocketObserver
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from level import Level
     from multiprocessing.managers import ValueProxy
+    from ai.sessions.session_manager import TrainingSession
+    import asyncio
 
 
-def _create_level_environment(
-    env_id: int,
-    level_bytes: bytes,
-    replay_queue,
-    frame_counter: "ValueProxy",
-    frame_lock,
-):
+def _create_level_environment(env_id: int, level_bytes: bytes, session_id: str):
     """Factory to create a LevelEnvironment instance in a subprocess."""
     return LevelEnvironment(
-        env_id=env_id,
-        level_bytes=level_bytes,
-        replay_queue=replay_queue,
-        frame_counter=frame_counter,
-        frame_lock=frame_lock,
+        env_id=env_id, level_bytes=level_bytes, session_id=session_id
     )
 
 
@@ -42,15 +35,13 @@ class Trainer:
     def __init__(
         self,
         level: "Level",
-        replay_queue,
-        frame_counter: "ValueProxy",
-        frame_lock,
+        session: "TrainingSession",
+        loop: "asyncio.AbstractEventLoop",
     ):
         logging.info(f"Trainer __init__ started for level: {level}")
         self.level = level
-        self.replay_queue = replay_queue
-        self.global_frame_counter = frame_counter
-        self.frame_lock = frame_lock
+        self.session = session
+        self.loop = loop
 
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         log_dir = "logs/train/" + current_time
@@ -65,9 +56,7 @@ class Trainer:
                 _create_level_environment,
                 env_id=i,
                 level_bytes=dill.dumps(self.level),
-                replay_queue=self.replay_queue,
-                frame_counter=self.global_frame_counter,
-                frame_lock=self.frame_lock,
+                session_id=self.session.session_id,
             )
             for i in range(ENV_BATCH_SIZE)
         ]
@@ -95,6 +84,8 @@ class Trainer:
             batch_size=self.train_env.batch_size
         )
 
+        websocket_observer = WebSocketObserver(self.session.replay_queue, self.loop)
+
         self.driver = dynamic_episode_driver.DynamicEpisodeDriver(
             self.train_env,
             self.agent.collect_policy,
@@ -102,6 +93,7 @@ class Trainer:
                 self.replay_buffer.add_batch,
                 self.avg_return_metric,
                 self.avg_episode_length_metric,
+                websocket_observer,
             ],
             num_episodes=COLLECT_STEPS_PER_ITERATION,
         )
