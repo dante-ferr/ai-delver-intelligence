@@ -31,7 +31,7 @@ async def train_agent(request: TrainRequest, background_tasks: BackgroundTasks):
     return {"message": "Training started.", "session_id": new_session.session_id}
 
 
-@router.websocket("/replay/{session_id}")
+@router.websocket("/episode-trajectory/{session_id}")
 async def websocket_replay_endpoint(websocket: WebSocket, session_id: str):
     """
     Handles the WebSocket connection, consuming directly from the
