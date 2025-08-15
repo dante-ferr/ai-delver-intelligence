@@ -1,8 +1,7 @@
 from runtime import Runtime
 from runtime.episode_trajectory import EpisodeTrajectory
 from ai.config import (
-    FPS,
-    FRAMES_PER_ACTION,
+    ACTIONS_PER_SECOND,
     FINISHED_REWARD,
     TURN_PENALTY_MULTIPLIER,
     MAX_FRAMES_PER_EPISODE,
@@ -18,7 +17,7 @@ if TYPE_CHECKING:
     from runtime.episode_trajectory import DelverAction
 
 
-DT = 1 / FPS * FRAMES_PER_ACTION
+DT = 1 / ACTIONS_PER_SECOND
 
 
 class Simulation(Runtime):
@@ -33,7 +32,9 @@ class Simulation(Runtime):
 
         self.exploration_grid = ExplorationGrid(level.map.size[0], level.map.size[1])
 
-        self.episode_trajectory = EpisodeTrajectory()
+        self.episode_trajectory = EpisodeTrajectory(
+            actions_per_second=ACTIONS_PER_SECOND
+        )
         self.last_action: "None | DelverAction" = None
 
     def step(self, action: "DelverAction"):
@@ -54,8 +55,8 @@ class Simulation(Runtime):
 
         self.frame += 1
 
-        if self.ended:
-            self._end()
+        if self.reached_goal:
+            self.episode_trajectory.victorious = True
 
         return reward, self.ended, self.elapsed_time
 
@@ -83,9 +84,6 @@ class Simulation(Runtime):
             reward += TILE_EXPLORATION_REWARD
 
         return reward
-
-    def _end(self):
-        pass
 
     @property
     def ended(self):

@@ -96,11 +96,13 @@ class LevelEnvironment(PyEnvironment):
     def _calculate_fps(self):
         with self._global_frame_lock:
             current_frame = self._global_frame_counter.value
+
         current_time = time.time()
         time_delta = current_time - self._last_fps_time
         frame_delta = current_frame - self._last_frame_count
         if time_delta == 0:
             return self.fps
+
         self.fps = frame_delta / time_delta
         self._last_fps_time = current_time
         self._last_frame_count = current_frame
@@ -109,6 +111,7 @@ class LevelEnvironment(PyEnvironment):
     def _step(self, action):
         self._count_frame()
         if self._episode_ended:
+            print("Last Delver position: ", self.delver_position)
             return self._reset()
 
         action_dict = self._get_dict_of_action(action)

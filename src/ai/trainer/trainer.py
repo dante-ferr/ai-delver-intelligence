@@ -14,6 +14,7 @@ from tensorflow.summary import create_file_writer  # type: ignore
 from ai.config import *
 from tf_agents.environments import tf_py_environment
 from ._web_socket_observer import WebSocketObserver
+import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,14 +32,12 @@ def _create_level_environment(env_id: int, level_bytes: bytes, session_id: str):
 
 
 class Trainer:
-
     def __init__(
         self,
         level: "Level",
         session: "TrainingSession",
         loop: "asyncio.AbstractEventLoop",
     ):
-        logging.info(f"Trainer __init__ started for level: {level}")
         self.level = level
         self.session = session
         self.loop = loop
@@ -48,7 +47,6 @@ class Trainer:
         self.summary_writer = create_file_writer(log_dir)
 
         self._setup_env_and_agent()
-        logging.info("Trainer __init__ finished successfully.")
 
     def _setup_env_and_agent(self):
         constructors = [
