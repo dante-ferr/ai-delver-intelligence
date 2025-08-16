@@ -1,16 +1,18 @@
 from runtime import Runtime
 from runtime.episode_trajectory import EpisodeTrajectory
+from runtime.episode_trajectory.snapshots import FrameSnapshot
 from ai.config import (
     ACTIONS_PER_SECOND,
     FINISHED_REWARD,
     TURN_PENALTY_MULTIPLIER,
-    MAX_FRAMES_PER_EPISODE,
+    MAX_SECONDS_PER_EPISODE,
     NOT_FINISHED_REWARD,
     FRAME_STEP_REWARD,
     TILE_EXPLORATION_REWARD,
 )
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from ._exploration_grid import ExplorationGrid
+from runtime.world_objects.entities import Entity
 
 if TYPE_CHECKING:
     from level import Level
@@ -95,9 +97,16 @@ class Simulation(Runtime):
 
     @property
     def time_is_over(self):
-        return self.frame >= MAX_FRAMES_PER_EPISODE
+        return self.frame >= MAX_SECONDS_PER_EPISODE * ACTIONS_PER_SECOND
 
     def update(self, dt):
         super().update(dt)
+
+        entities = self.world_objects_controller.get_world_objects_by_type(Entity)
+        entities = cast(list[Entity], entities)
+        frame_snapshot = FrameSnapshot()
+        for entity in entities:
+            frame_snapshot.add_entity(entity)
+        self.episode_trajectory.add_frame_snapshot(frame_snapshot)
 
         self.elapsed_time += dt
