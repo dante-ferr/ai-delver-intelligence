@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from ..utils import get_specs_from
 import json
 import keras
-from ai.config import *
+from ai.config import config
 
 if TYPE_CHECKING:
     from tf_agents.environments.tf_py_environment import TFPyEnvironment
@@ -22,8 +22,12 @@ def check_gpu_available():
 
 
 class PPOAgentFactory:
+
     def __init__(
-        self, train_env: "TFPyEnvironment", learning_rate=LEARNING_RATE, gamma=GAMMA
+        self,
+        train_env: "TFPyEnvironment",
+        learning_rate=config.LEARNING_RATE,
+        gamma=config.GAMMA,
     ):
         walls_spec = train_env.observation_spec()["walls"]
         walls_shape = walls_spec.shape
@@ -84,7 +88,7 @@ class PPOAgentFactory:
             normalize_rewards=True,
             discount_factor=gamma,
             train_step_counter=tf.Variable(0, dtype=tf.int64),
-            entropy_regularization=ENTROPY_REGULARIZATION,
+            entropy_regularization=config.ENTROPY_REGULARIZATION,
             use_gae=True,
             use_td_lambda_return=True,
         )

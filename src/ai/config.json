@@ -1,6 +1,6 @@
 {
   "initial_collect_steps": 0,
-  "collect_steps_per_iteration": 1,
+  "collect_steps_per_iteration": 10,
   "replay_buffer_batch_size": 32,
   "replay_buffer_capacity": 50000,
   "learning_rate": 0.0025,

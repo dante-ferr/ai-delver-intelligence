@@ -10,7 +10,7 @@ import functools
 import logging
 from ai.agents import PPOAgentFactory
 from tensorflow.summary import create_file_writer  # type: ignore
-from ai.config import *
+from ai.config import config
 from tf_agents.environments import tf_py_environment
 from ._web_socket_observer import WebSocketObserver
 from ._trainer_model_manager import TrainerModelManager
@@ -38,7 +38,9 @@ class Trainer:
         self.session = session
         self.loop = loop
 
-        self.num_interactions = session.amount_of_episodes // ENV_BATCH_SIZE
+        self.num_iteractions = (
+            session.amount_of_episodes // config.COLLECT_STEPS_PER_ITERATION
+        )
 
         self.model_bytes = model_bytes
 
@@ -58,7 +60,7 @@ class Trainer:
                 level_json=self.session.level_json,
                 session_id=self.session.session_id,
             )
-            for i in range(ENV_BATCH_SIZE)
+            for i in range(config.ENV_BATCH_SIZE)
         ]
 
         py_env = parallel_py_environment.ParallelPyEnvironment(
@@ -67,7 +69,7 @@ class Trainer:
         self.train_env = tf_py_environment.TFPyEnvironment(py_env)
 
         self.agent = PPOAgentFactory(
-            self.train_env, learning_rate=LEARNING_RATE, gamma=GAMMA
+            self.train_env, learning_rate=config.LEARNING_RATE, gamma=config.GAMMA
         ).get_agent()
 
         if self.model_bytes:
@@ -89,7 +91,7 @@ class Trainer:
         self.replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
             data_spec=self.agent.collect_data_spec,
             batch_size=self.train_env.batch_size,
-            max_length=REPLAY_BUFFER_CAPACITY,
+            max_length=config.REPLAY_BUFFER_CAPACITY,
         )
 
         self.avg_return_metric = tf_metrics.AverageReturnMetric(
@@ -110,16 +112,16 @@ class Trainer:
                 self.avg_episode_length_metric,
                 websocket_observer,
             ],
-            num_episodes=COLLECT_STEPS_PER_ITERATION,
+            num_episodes=config.COLLECT_STEPS_PER_ITERATION,
         )
 
     def train(self):
         """Trains the agent until interrupted or the maximum number of iterations is reached. Returns the updated tensorflow model."""
-        logging.info(f"Starting training for {self.num_interactions} iterations...")
+        logging.info(f"Starting training for {self.num_iteractions} iterations...")
         self.driver.run = common.function(self.driver.run)
 
         with self.summary_writer.as_default():
-            for iteration in range(self.num_interactions):
+            for iteration in range(self.num_iteractions):
                 # Check for interruption before starting a new iteration.
                 if self._is_interrupted:
                     logging.info("Training was interrupted by a user request.")
@@ -134,7 +136,7 @@ class Trainer:
                 self.replay_buffer.clear()
 
                 step = self.agent.train_step_counter
-                if iteration % LOG_INTERVAL == 0:
+                if iteration % config.LOG_INTERVAL == 0:
                     logging.info(
                         f"Iteration {iteration}: Step = {step}, Loss = {loss_info.loss.numpy()}"
                     )

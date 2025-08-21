@@ -1,24 +1,28 @@
 import json
+from pathlib import Path
+from typing import Any
 
-with open("src/ai/config.json", "r") as f:
-    config = json.load(f)
 
-INITIAL_COLLECT_STEPS = config["initial_collect_steps"]
-COLLECT_STEPS_PER_ITERATION = config["collect_steps_per_iteration"]
-REPLAY_BUFFER_BATCH_SIZE = config["replay_buffer_batch_size"]
-REPLAY_BUFFER_CAPACITY = config["replay_buffer_capacity"]
-LEARNING_RATE = config["learning_rate"]
-GAMMA = config["gamma"]
-EPSILON_GREEDY = config["epsilon_greedy"]
-LOG_INTERVAL = config["log_interval"]
-SEED = config["seed"]
-ENTROPY_REGULARIZATION = config["entropy_regularization"]
-INITIAL_POLICY = config["initial_policy"]
-ENV_BATCH_SIZE = config["env_batch_size"]
-MAX_SECONDS_PER_EPISODE = config["max_seconds_per_episode"]
-ACTIONS_PER_SECOND = config["actions_per_second"]
-NOT_FINISHED_REWARD = config["not_finished_reward"]
-FINISHED_REWARD = config["finished_reward"]
-TURN_PENALTY_MULTIPLIER = config["turn_penalty_multiplier"]
-FRAME_STEP_REWARD = config["frame_step_reward"]
-TILE_EXPLORATION_REWARD = config["tile_exploration_reward"]
+class Config:
+    """A class to hold and provide access to configuration settings from a JSON file."""
+
+    def __init__(self, config_path: str = "src/ai/config.json"):
+        self._config_path = Path(config_path)
+        self._data = self._load_config()
+
+    def _load_config(self) -> dict:
+        with open(self._config_path, "r") as f:
+            return json.load(f)
+
+    def __getattr__(self, name: str) -> Any:
+        # Converts Python's UPPER_SNAKE_CASE to json's snake_case for lookup
+        key = name.lower()
+        if key in self._data:
+            return self._data[key]
+        raise AttributeError(
+            f"Configuration '{self._config_path}' has no setting '{key}'"
+        )
+
+
+# A single, global instance for easy access throughout the application.
+config = Config()

@@ -1,17 +1,17 @@
 from runtime import Runtime
 from runtime.episode_trajectory import EpisodeTrajectory
 from runtime.episode_trajectory.snapshots import FrameSnapshot
-from ai.config import *
-from typing import TYPE_CHECKING, cast
+from ai.config import config
 from ._exploration_grid import ExplorationGrid
 from runtime.world_objects.entities import Entity
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from level import Level
     from runtime.episode_trajectory import DelverAction
 
 
-DT = 1 / ACTIONS_PER_SECOND
+DT = 1 / config.ACTIONS_PER_SECOND
 
 
 class Simulation(Runtime):
@@ -27,7 +27,7 @@ class Simulation(Runtime):
         self.exploration_grid = ExplorationGrid(level.map.size[0], level.map.size[1])
 
         self.episode_trajectory = EpisodeTrajectory(
-            actions_per_second=ACTIONS_PER_SECOND
+            actions_per_second=config.ACTIONS_PER_SECOND
         )
         self.last_action: "None | DelverAction" = None
 
@@ -58,9 +58,9 @@ class Simulation(Runtime):
         reward = 0
 
         if self.reached_goal:
-            reward += FINISHED_REWARD
+            reward += config.FINISHED_REWARD
         elif self.time_is_over:
-            reward += NOT_FINISHED_REWARD
+            reward += config.NOT_FINISHED_REWARD
 
         if self.last_action and self.last_action["move"] and action["move"]:
             angle_diff = (
@@ -69,13 +69,13 @@ class Simulation(Runtime):
 
             # Penalize for turning. The penalty is proportional to the change in angle.
             # Max penalty is 1.0 for a 180 degree turn.
-            reward -= (abs(angle_diff) / 180.0) * TURN_PENALTY_MULTIPLIER
+            reward -= (abs(angle_diff) / 180.0) * config.TURN_PENALTY_MULTIPLIER
 
-        reward += FRAME_STEP_REWARD
+        reward += config.FRAME_STEP_REWARD
 
         new_explorated_tile = self.exploration_grid.step_on(self.delver.position)
         if new_explorated_tile:
-            reward += TILE_EXPLORATION_REWARD
+            reward += config.TILE_EXPLORATION_REWARD
 
         return reward
 
@@ -89,7 +89,7 @@ class Simulation(Runtime):
 
     @property
     def time_is_over(self):
-        return self.frame >= MAX_SECONDS_PER_EPISODE * ACTIONS_PER_SECOND
+        return self.frame >= config.MAX_SECONDS_PER_EPISODE * config.ACTIONS_PER_SECOND
 
     def update(self, dt):
         super().update(dt)
