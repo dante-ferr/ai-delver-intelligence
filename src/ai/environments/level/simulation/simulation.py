@@ -1,15 +1,7 @@
 from runtime import Runtime
 from runtime.episode_trajectory import EpisodeTrajectory
 from runtime.episode_trajectory.snapshots import FrameSnapshot
-from ai.config import (
-    ACTIONS_PER_SECOND,
-    FINISHED_REWARD,
-    TURN_PENALTY_MULTIPLIER,
-    MAX_SECONDS_PER_EPISODE,
-    NOT_FINISHED_REWARD,
-    FRAME_STEP_REWARD,
-    TILE_EXPLORATION_REWARD,
-)
+from ai.config import *
 from typing import TYPE_CHECKING, cast
 from ._exploration_grid import ExplorationGrid
 from runtime.world_objects.entities import Entity

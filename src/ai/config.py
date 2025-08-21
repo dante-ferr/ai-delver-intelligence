@@ -3,7 +3,6 @@ import json
 with open("src/ai/config.json", "r") as f:
     config = json.load(f)
 
-NUM_ITERATIONS = config["num_iterations"]
 INITIAL_COLLECT_STEPS = config["initial_collect_steps"]
 COLLECT_STEPS_PER_ITERATION = config["collect_steps_per_iteration"]
 REPLAY_BUFFER_BATCH_SIZE = config["replay_buffer_batch_size"]

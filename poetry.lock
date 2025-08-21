@@ -1412,6 +1412,7 @@ develop = true
 
 [package.dependencies]
 numpy = "*"
+pyglet = "*"
 pymunk = "*"
 
 [package.source]
@@ -2108,4 +2109,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10.0,<3.12"
-content-hash = "6ff1e3be4e94b1edb76a3dd4690080bd0dc08a6e81c4cc31890234ed0476c209"
+content-hash = "2fb5f51065ea1982c5a4f1241ca337f1141c1c1b61b911dea586df7714a47b0e"

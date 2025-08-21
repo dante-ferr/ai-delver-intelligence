@@ -1,5 +1,4 @@
 {
-  "num_iterations": 1,
   "initial_collect_steps": 0,
   "collect_steps_per_iteration": 1,
   "replay_buffer_batch_size": 32,
@@ -11,7 +10,7 @@
   "log_interval": 1,
   "seed": 42,
   "initial_policy": "continuity",
-  "env_batch_size": 1,
+  "env_batch_size": 10,
   "max_seconds_per_episode": 60,
   "actions_per_second": 10,
   "not_finished_reward": -250.0,

@@ -12,17 +12,16 @@ from .simulation import Simulation
 from runtime.episode_trajectory import DelverAction
 from ._logger import LevelEnvironmentLogger
 from ai.sessions import REGISTRY_LOCK, SESSION_REGISTRY
-
+from level import Level
 
 if TYPE_CHECKING:
-    from level import Level
     from ._delver_observation import DelverObservation
 
 class LevelEnvironment(PyEnvironment):
 
-    def __init__(self, env_id: int, level_bytes: bytes, session_id: str):
+    def __init__(self, env_id: int, level_json: dict, session_id: str):
         self._env_id = env_id
-        self._level: "Level" = dill.loads(level_bytes)
+        self._level = Level.from_dict(level_json)
         self._session_id = session_id
 
         with REGISTRY_LOCK:
@@ -86,7 +85,7 @@ class LevelEnvironment(PyEnvironment):
         self._episode_ended = False
         self._restart_simulation()
         if self._env_id == 0:
-            self._logger.log_episode_start(self._episodes)
+            self._logger.log_episode_start()
         return ts.restart(self.observation)
 
     def _count_frame(self):
@@ -111,7 +110,6 @@ class LevelEnvironment(PyEnvironment):
     def _step(self, action):
         self._count_frame()
         if self._episode_ended:
-            print("Last Delver position: ", self.delver_position)
             return self._reset()
 
         action_dict = self._get_dict_of_action(action)
@@ -140,9 +138,7 @@ class LevelEnvironment(PyEnvironment):
     def _create_time_step(self, reward):
         if self._episode_ended:
             if self._env_id == 0:
-                self._logger.log_episode_end(
-                    episode=self._episodes, reward=self.simulation.total_reward
-                )
+                self._logger.log_episode_end(reward=self.simulation.total_reward)
             return ts.termination(self.observation, reward)
         return ts.transition(self.observation, reward, 1.0)
 

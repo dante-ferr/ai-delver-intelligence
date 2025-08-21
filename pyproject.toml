@@ -7,8 +7,8 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = ">=3.10.0,<3.12"
-dill = "*"
-numpy = "*"
+dill = "==0.4.0"
+numpy = "==1.26.4"
 tensorflow = "==2.15.0"
 six = "*"
 fastapi = "==0.95.2"

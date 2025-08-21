@@ -17,7 +17,11 @@ class WebSocketObserver:
         This is the pure Python logic that runs outside the main graph.
         It no longer needs to return a value.
         """
-        for json_string_bytes in json_tensor.numpy():
+        for (
+            json_string_bytes
+        ) in (
+            json_tensor.numpy()
+        ):  # we're ignoring pylance's false-positive, because json_tensor in fact has a numpy method  # type: ignore
             if json_string_bytes:
                 json_string = json_string_bytes.decode("utf-8")
                 self._loop.call_soon_threadsafe(

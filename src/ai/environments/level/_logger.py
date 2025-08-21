@@ -22,10 +22,10 @@ class CustomFormatter(logging.Formatter):
     """
 
     # Simple format for general messages (start, end, errors)
-    simple_fmt = "%(asctime)s - [Ep %(episode)s] - %(message)s"
+    simple_fmt = "%(asctime)s - %(message)s"
 
     # Detailed format specifically for step-by-step training data
-    detailed_fmt = "%(asctime)s - [Ep %(episode)s] - Global Frame: %(global_frame_count)s | Sim Frame: %(simulation_frame)s | Reward: %(reward)s | Pos: %(delver_position)s | Move: %(move)s | Angle: %(move_angle)s | FPS: %(fps)s"
+    detailed_fmt = "%(asctime)s - Global Frame: %(global_frame_count)s | Sim Frame: %(simulation_frame)s | Reward: %(reward)s | Pos: %(delver_position)s | Move: %(move)s | Angle: %(move_angle)s | FPS: %(fps)s"
 
     def __init__(self):
         super().__init__(fmt="%(levelname)s: %(message)s", datefmt=None, style="%")
@@ -45,7 +45,6 @@ class CustomFormatter(logging.Formatter):
 class LevelEnvironmentLogger:
 
     def __init__(self, log_dir="./logger_train/logs"):
-        self.current_episode = 0
         self.logger = logging.getLogger(f"ai_delver_environment")
         self.logger.setLevel(logging.INFO)
         self.logger.propagate = False
@@ -66,10 +65,9 @@ class LevelEnvironmentLogger:
         self.logger.addHandler(console_handler)
         self.last_step_log_time = time.time()
 
-    def log_episode_start(self, episode):
-        self.current_episode = episode
+    def log_episode_start(self):
         # This call is simple. The formatter will use the simple format.
-        self.logger.info("Episode Start", extra={"episode": self.current_episode})
+        self.logger.info("Episode Start")
 
     def log_step(
         self,
@@ -88,7 +86,6 @@ class LevelEnvironmentLogger:
             self.logger.info(
                 "",  # The message itself is not needed as the formatter handles everything
                 extra={
-                    "episode": self.current_episode,
                     "global_frame_count": global_frame_count,
                     "simulation_frame": simulation_frame,
                     "reward": f"{reward:.4f}",
@@ -100,11 +97,11 @@ class LevelEnvironmentLogger:
             )
             self.last_step_log_time = current_time
 
-    def log_episode_end(self, episode, reward):
+    def log_episode_end(self, reward):
         # This call is simple. The formatter will use the simple format.
         message = f"Episode End. Final Reward: {reward:.4f}"
-        self.logger.info(message, extra={"episode": episode})
+        self.logger.info(message)
 
     def log_error(self, error_message):
         # This call is simple. The formatter will use the simple format.
-        self.logger.error(error_message, extra={"episode": self.current_episode})
+        self.logger.error(error_message)

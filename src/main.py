@@ -1,5 +1,4 @@
 import uvicorn
-import functools
 from api.server import app as api_app
 from tf_agents.system import multiprocessing as tf_mp
 

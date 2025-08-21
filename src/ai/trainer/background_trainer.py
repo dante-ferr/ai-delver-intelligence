@@ -1,7 +1,6 @@
 import logging
 import multiprocessing as std_mp
 from ai.sessions.session_manager import session_manager
-from ai.trainer import Trainer
 from ai.sessions import REGISTRY_LOCK, SESSION_REGISTRY
 from typing import TYPE_CHECKING
 
@@ -9,7 +8,7 @@ if TYPE_CHECKING:
     import asyncio
 
 
-def run_training_in_background(session_id: str, loop: "asyncio.AbstractEventLoop"):
+def run_training_in_background(session_id: str):
     """Initializes shared objects for a specific session and starts training."""
     global SESSION_REGISTRY, REGISTRY_LOCK
 
@@ -17,6 +16,10 @@ def run_training_in_background(session_id: str, loop: "asyncio.AbstractEventLoop
     if not session:
         logging.error(f"FATAL: Background worker could not find session {session_id}.")
         return
+    if not session.trainer:
+        logging.error(
+            f"FATAL: Background worker could not find trainer for session {session_id}."
+        )
 
     with REGISTRY_LOCK:
         SESSION_REGISTRY[session_id] = {
@@ -25,8 +28,8 @@ def run_training_in_background(session_id: str, loop: "asyncio.AbstractEventLoop
         }
 
     try:
-        trainer = Trainer(level=session.level, session=session, loop=loop)
-        trainer.train()
+        session.trainer.setup_env_and_agent()
+        session.trainer.train()
     except Exception as e:
         logging.error(
             f"Error during training for session {session_id}: {e}", exc_info=True

@@ -7,53 +7,55 @@ from tf_agents.metrics import tf_metrics
 from ai.environments.level.environment import LevelEnvironment
 import datetime
 import functools
-import dill
 import logging
 from ai.agents import PPOAgentFactory
 from tensorflow.summary import create_file_writer  # type: ignore
 from ai.config import *
 from tf_agents.environments import tf_py_environment
 from ._web_socket_observer import WebSocketObserver
-import os
+from ._trainer_model_manager import TrainerModelManager
+from ai.sessions.session_manager import session_manager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from level import Level
-    from multiprocessing.managers import ValueProxy
     from ai.sessions.session_manager import TrainingSession
     import asyncio
 
 
-def _create_level_environment(env_id: int, level_bytes: bytes, session_id: str):
+def _create_level_environment(env_id: int, level_json: dict, session_id: str):
     """Factory to create a LevelEnvironment instance in a subprocess."""
-    return LevelEnvironment(
-        env_id=env_id, level_bytes=level_bytes, session_id=session_id
-    )
+    return LevelEnvironment(env_id=env_id, level_json=level_json, session_id=session_id)
 
 
 class Trainer:
+
     def __init__(
         self,
-        level: "Level",
         session: "TrainingSession",
         loop: "asyncio.AbstractEventLoop",
+        model_bytes: None | bytes = None,
     ):
-        self.level = level
         self.session = session
         self.loop = loop
+
+        self.num_interactions = session.amount_of_episodes // ENV_BATCH_SIZE
+
+        self.model_bytes = model_bytes
+
+        self._is_interrupted = False
 
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         log_dir = "logs/train/" + current_time
         self.summary_writer = create_file_writer(log_dir)
 
-        self._setup_env_and_agent()
+        self.model_manager = TrainerModelManager(self)
 
-    def _setup_env_and_agent(self):
+    def setup_env_and_agent(self):
         constructors = [
             functools.partial(
                 _create_level_environment,
                 env_id=i,
-                level_bytes=dill.dumps(self.level),
+                level_json=self.session.level_json,
                 session_id=self.session.session_id,
             )
             for i in range(ENV_BATCH_SIZE)
@@ -67,7 +69,22 @@ class Trainer:
         self.agent = PPOAgentFactory(
             self.train_env, learning_rate=LEARNING_RATE, gamma=GAMMA
         ).get_agent()
-        self.agent.train_step_counter.assign(0)
+
+        if self.model_bytes:
+            logging.info(
+                "Pre-trained model provided. Attempting to deserialize and load policy."
+            )
+            try:
+                self.model_manager.load_serialized_model(self.model_bytes)
+            except Exception as e:
+                logging.error(
+                    f"Failed to deserialize or load the model: {e}. Training will start with a new model."
+                )
+                # If loading fails, ensure we start from step 0.
+                self.agent.train_step_counter.assign(0)
+        else:
+            # If no model is provided, start training from scratch.
+            self.agent.train_step_counter.assign(0)
 
         self.replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
             data_spec=self.agent.collect_data_spec,
@@ -97,12 +114,21 @@ class Trainer:
         )
 
     def train(self):
-        logging.info(f"Starting training for {NUM_ITERATIONS} iterations...")
+        """Trains the agent until interrupted or the maximum number of iterations is reached. Returns the updated tensorflow model."""
+        logging.info(f"Starting training for {self.num_interactions} iterations...")
         self.driver.run = common.function(self.driver.run)
 
         with self.summary_writer.as_default():
-            for iteration in range(NUM_ITERATIONS):
+            for iteration in range(self.num_interactions):
+                # Check for interruption before starting a new iteration.
+                if self._is_interrupted:
+                    logging.info("Training was interrupted by a user request.")
+                    break
+
+                # Collect a sequence of episodes.
                 self.driver.run()
+
+                # Train the agent with the collected experience.
                 experience = self.replay_buffer.gather_all()
                 loss_info = self.agent.train(experience)
                 self.replay_buffer.clear()
@@ -113,7 +139,16 @@ class Trainer:
                         f"Iteration {iteration}: Step = {step}, Loss = {loss_info.loss.numpy()}"
                     )
                     self._handle_tensorboard(loss_info, step)
-        logging.info("Training finished.")
+
+        if not self._is_interrupted:
+            logging.info("Training finished.")
+        session_manager.delete_session(self.session.session_id)
+
+    def interrupt_training(self):
+        logging.info(
+            "Interrupt signal received. Training will stop after the current iteration."
+        )
+        self._is_interrupted = True
 
     def _handle_tensorboard(self, loss_info, step):
         avg_return = self.avg_return_metric.result().numpy()
