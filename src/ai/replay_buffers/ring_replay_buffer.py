@@ -84,7 +84,9 @@ class RingReplayBuffer:
             reward=tf.zeros_like(self.rewards[indices]),
             discount=tf.convert_to_tensor(1.0 - self.dones[indices].astype(np.float32)),
             observation={
-                "walls": tf.convert_to_tensor(self.next_observations["walls"][indices]),
+                "platforms": tf.convert_to_tensor(
+                    self.next_observations["platforms"][indices]
+                ),
                 "delver_position": tf.convert_to_tensor(
                     self.next_observations["delver_position"][indices]
                 ),
@@ -111,7 +113,7 @@ class RingReplayBuffer:
 
     def _get_sampled_obs(self, indices):
         return {
-            "walls": tf.convert_to_tensor(self.observations["walls"][indices]),
+            "platforms": tf.convert_to_tensor(self.observations["platforms"][indices]),
             "delver_position": tf.convert_to_tensor(
                 self.observations["delver_position"][indices]
             ),

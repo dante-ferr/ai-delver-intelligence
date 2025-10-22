@@ -60,8 +60,8 @@ class LevelEnvironment(PyEnvironment):
             ),
         }
         self._observation_spec = {
-            "walls": array_spec.ArraySpec(
-                shape=self.walls_grid.shape, dtype=np.float32, name="walls"
+            "platforms": array_spec.ArraySpec(
+                shape=self.platforms_grid.shape, dtype=np.float32, name="platforms"
             ),
             "delver_position": array_spec.ArraySpec(
                 shape=(2,), dtype=np.float32, name="delver_position"
@@ -149,20 +149,20 @@ class LevelEnvironment(PyEnvironment):
         if self._episode_ended:
             replay_data_str = self.simulation.episode_trajectory.to_json()
 
-        walls_layer = self.walls_grid.astype(np.float32)
+        platforms_layer = self.platforms_grid.astype(np.float32)
 
         return {
-            "walls": np.array(walls_layer, dtype=np.float32),
+            "platforms": np.array(platforms_layer, dtype=np.float32),
             "delver_position": np.array([*self.delver_position], dtype=np.float32),
             "goal_position": np.array([*self.goal_position], dtype=np.float32),
             "replay_json": np.array(replay_data_str, dtype=str),
         }
 
     @cached_property
-    def walls_grid(self):
-        walls_grid = self.simulation.tilemap.get_layer("walls").grid
+    def platforms_grid(self):
+        platforms_grid = self.simulation.tilemap.get_layer("platforms").grid
         return np.array(
-            [[1 if cell is not None else 0 for cell in row] for row in walls_grid],
+            [[1 if cell is not None else 0 for cell in row] for row in platforms_grid],
             dtype=np.uint8,
         )
 

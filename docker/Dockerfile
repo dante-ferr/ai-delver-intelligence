@@ -6,9 +6,12 @@ ARG BASE_IMAGE="python:3.11-slim"
 # =========================================================================
 FROM ${BASE_IMAGE} AS base
 
+# Set the DEBIAN_FRONTEND argument to suppress all interactive prompts
+ARG DEBIAN_FRONTEND=noninteractive
+
 # Install essential system-level dependencies.
 RUN apt-get update && \
-    apt-get install -y curl build-essential python3-pip tk-dev && \
+    apt-get install -y --no-install-recommends curl build-essential python3-pip tk-dev python3.11-tk && \
     rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user for better security.
@@ -41,6 +44,9 @@ WORKDIR /app/ai-delver-intelligence
 # Copy the dependency files.
 COPY --chown=appuser:appgroup ai-delver-intelligence/pyproject.toml ./
 COPY --chown=appuser:appgroup ai-delver-intelligence/poetry.lock ./
+
+# Pre-emptively remove the system-installed blinker package.
+RUN apt-get update && apt-get remove -y python3-blinker
 
 # Install all dependencies using Poetry as root.
 RUN poetry config virtualenvs.create false && \

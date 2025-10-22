@@ -3,11 +3,9 @@ from tf_agents.networks import (
     actor_distribution_network,
     value_network,
 )
-from tf_agents.networks import encoding_network
 import tensorflow as tf
 from typing import TYPE_CHECKING
 from ..utils import get_specs_from
-import json
 import keras
 from ai.config import config
 
@@ -29,17 +27,18 @@ class PPOAgentFactory:
         learning_rate=config.LEARNING_RATE,
         gamma=config.GAMMA,
     ):
-        walls_spec = train_env.observation_spec()["walls"]
-        walls_shape = walls_spec.shape
+        platforms_spec = train_env.observation_spec()["platforms"]
+        platforms_shape = platforms_spec.shape
 
-        walls_preprocessing = keras.Sequential(
+        platforms_preprocessing = keras.Sequential(
             [
-                keras.layers.Rescaling(1.0),
-                keras.layers.Reshape((*walls_shape, 1)),
+                keras.layers.Reshape((*platforms_shape, 1)),
                 keras.layers.Conv2D(16, 3, activation="relu"),
+                keras.layers.Conv2D(32, 3, activation="relu"),
                 keras.layers.Flatten(),
                 keras.layers.Dense(32, activation="relu"),
-            ]
+            ],
+            name="platforms_preprocessing",
         )
         position_preprocessing = keras.Sequential(
             [
@@ -51,7 +50,7 @@ class PPOAgentFactory:
             name="position_preprocessing",
         )
         preprocessing_layers = {
-            "walls": walls_preprocessing,
+            "platforms": platforms_preprocessing,
             "delver_position": position_preprocessing,
             "goal_position": position_preprocessing,
             "replay_json": keras.layers.Lambda(
@@ -62,18 +61,20 @@ class PPOAgentFactory:
         preprocessing_combiner = keras.layers.Concatenate()
         time_step_spec, action_spec, observation_spec = get_specs_from(train_env)
 
+        fc_layer_params = (128, 64)
+
         actor_net = actor_distribution_network.ActorDistributionNetwork(
             observation_spec,
             action_spec,
             preprocessing_layers=preprocessing_layers,
             preprocessing_combiner=preprocessing_combiner,
-            fc_layer_params=(32, 16),
+            fc_layer_params=fc_layer_params,
         )
         value_net = value_network.ValueNetwork(
             observation_spec,
             preprocessing_layers=preprocessing_layers,
             preprocessing_combiner=preprocessing_combiner,
-            fc_layer_params=(32, 16),
+            fc_layer_params=fc_layer_params,
         )
 
         optimizer = keras.optimizers.Adam(learning_rate=learning_rate)

@@ -10,7 +10,7 @@ class CoverageRandomPolicy(py_policy.PyPolicy):
     def __init__(self, time_step_spec, action_spec, environment):
         super().__init__(time_step_spec, action_spec)
         self.env = environment
-        self.map_size = self.env.walls_grid.shape
+        self.map_size = self.env.platforms_grid.shape
         self.visited_map = np.zeros(self.map_size, dtype=bool)
 
     def _action(self, time_step: ts.TimeStep):
