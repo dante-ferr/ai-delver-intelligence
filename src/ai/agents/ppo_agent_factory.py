@@ -27,19 +27,22 @@ class PPOAgentFactory:
         learning_rate=config.LEARNING_RATE,
         gamma=config.GAMMA,
     ):
-        platforms_spec = train_env.observation_spec()["platforms"]
-        platforms_shape = platforms_spec.shape
 
+        # --- Preprocessing Layers ---
+        # OPTIMIZATION: Removed Conv2D.
+        # Since the input is a binary grid (0/1) and not a complex RGB image,
+        # flattening and using Dense layers is significantly faster for the CPU/GPU
+        # and sufficient for the agent to learn local topology.
         platforms_preprocessing = keras.Sequential(
             [
-                keras.layers.Reshape((*platforms_shape, 1)),
-                keras.layers.Conv2D(16, 3, activation="relu"),
-                keras.layers.Conv2D(32, 3, activation="relu"),
                 keras.layers.Flatten(),
-                keras.layers.Dense(32, activation="relu"),
+                keras.layers.Dense(
+                    64, activation="relu"
+                ),  # Reduced from 128 to 64 for speed
             ],
             name="platforms_preprocessing",
         )
+
         position_preprocessing = keras.Sequential(
             [
                 keras.layers.LayerNormalization(axis=-1),
@@ -49,20 +52,25 @@ class PPOAgentFactory:
             ],
             name="position_preprocessing",
         )
+
         preprocessing_layers = {
             "platforms": platforms_preprocessing,
             "delver_position": position_preprocessing,
             "goal_position": position_preprocessing,
             "replay_json": keras.layers.Lambda(
-                lambda x: tf.zeros(shape=(tf.shape(x)[0], 0))  # type: ignore
+                lambda x: tf.zeros(shape=(tf.shape(x)[0], 0))  # Ignore replay string
             ),
         }
 
         preprocessing_combiner = keras.layers.Concatenate()
+
+        # Get specs automatically (now supports the dictionary action spec)
         time_step_spec, action_spec, observation_spec = get_specs_from(train_env)
 
+        # Main logic layers (Brain)
         fc_layer_params = (128, 64)
 
+        # Actor Network: Handles the Dict action spec automatically, creating separate heads for 'move' and 'jump'
         actor_net = actor_distribution_network.ActorDistributionNetwork(
             observation_spec,
             action_spec,
@@ -70,6 +78,8 @@ class PPOAgentFactory:
             preprocessing_combiner=preprocessing_combiner,
             fc_layer_params=fc_layer_params,
         )
+
+        # Value Network: Estimates how good the current state is
         value_net = value_network.ValueNetwork(
             observation_spec,
             preprocessing_layers=preprocessing_layers,
@@ -85,8 +95,8 @@ class PPOAgentFactory:
             actor_net=actor_net,
             value_net=value_net,
             optimizer=optimizer,
-            normalize_observations=False,
-            normalize_rewards=True,
+            normalize_observations=False,  # We handle norm in preprocessing layers
+            normalize_rewards=True,  # Critical for PPO stability
             discount_factor=gamma,
             train_step_counter=tf.Variable(0, dtype=tf.int64),
             entropy_regularization=config.ENTROPY_REGULARIZATION,

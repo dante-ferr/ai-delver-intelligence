@@ -1,6 +1,3 @@
-# FILE: _logger.py (or wherever your logger class is)
-# COMMENTS IN ENGLISH AS REQUESTED
-
 import logging
 import datetime
 import time
@@ -25,7 +22,8 @@ class CustomFormatter(logging.Formatter):
     simple_fmt = "%(asctime)s - %(message)s"
 
     # Detailed format specifically for step-by-step training data
-    detailed_fmt = "%(asctime)s - Global Frame: %(global_frame_count)s | Sim Frame: %(simulation_frame)s | Reward: %(reward)s | Pos: %(delver_position)s | Move: %(move)s | Angle: %(move_angle)s | FPS: %(fps)s"
+    # Updated to show Jump status instead of Angle
+    detailed_fmt = "%(asctime)s - Global Frame: %(global_frame_count)s | Sim Frame: %(simulation_frame)s | Reward: %(reward)s | Pos: %(delver_position)s | Run: %(run)s | Jump: %(jump)s | FPS: %(fps)s"
 
     def __init__(self):
         super().__init__(fmt="%(levelname)s: %(message)s", datefmt=None, style="%")
@@ -34,7 +32,7 @@ class CustomFormatter(logging.Formatter):
 
     def format(self, record):
         # Check if the log record is a detailed step log.
-        # We use the presence of the 'step' attribute as the trigger.
+        # We use the presence of the 'simulation_frame' attribute as the trigger.
         if hasattr(record, "simulation_frame"):
             return self.detailed_formatter.format(record)
 
@@ -72,8 +70,8 @@ class LevelEnvironmentLogger:
     def log_step(
         self,
         reward,
-        move,
-        move_angle,
+        run,
+        jump,
         delver_position,
         global_frame_count,
         simulation_frame,
@@ -81,7 +79,7 @@ class LevelEnvironmentLogger:
     ):
         current_time = time.time()
         if (current_time - self.last_step_log_time) >= 1.0:  # Throttled to 1 second
-            # This call is detailed. The formatter will see the 'step' attribute
+            # This call is detailed. The formatter will see the attributes in extra
             # and use the detailed format automatically.
             self.logger.info(
                 "",  # The message itself is not needed as the formatter handles everything
@@ -90,8 +88,8 @@ class LevelEnvironmentLogger:
                     "simulation_frame": simulation_frame,
                     "reward": f"{reward:.4f}",
                     "delver_position": f"({delver_position[0]:.1f}, {delver_position[1]:.1f})",
-                    "move": move,
-                    "move_angle": f"{move_angle:.1f}°",
+                    "run": run,
+                    "jump": jump,
                     "fps": f"{fps:.1f}",
                 },
             )

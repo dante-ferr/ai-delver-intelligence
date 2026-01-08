@@ -38,8 +38,11 @@ class Simulation(Runtime):
 
         self.episode_trajectory.add_delver_action(action)
 
-        if action["move"]:
-            self.delver.move(DT, action["move_angle"])
+        if action["run"] != 0:
+            self.delver.run(DT, action["run"])
+
+        if action["jump"]:
+            self.delver.jump(DT)
 
         self.last_action = action
         self.update(DT)
@@ -62,14 +65,16 @@ class Simulation(Runtime):
         elif self.time_is_over:
             reward += config.NOT_FINISHED_REWARD
 
-        if self.last_action and self.last_action["move"] and action["move"]:
-            angle_diff = (
-                action["move_angle"] - self.last_action["move_angle"] + 180
-            ) % 360 - 180
+        if (
+            self.last_action
+            and self.last_action["run"] != 0
+            and action["run"] != 0
+            and self.last_action["run"] != action["run"]
+        ):
+            reward += config.TURN_PENALTY
 
-            # Penalize for turning. The penalty is proportional to the change in angle.
-            # Max penalty is 1.0 for a 180 degree turn.
-            reward -= (abs(angle_diff) / 180.0) * config.TURN_PENALTY_MULTIPLIER
+        if action["jump"]:
+            reward += config.JUMP_REWARD
 
         reward += config.FRAME_STEP_REWARD
 

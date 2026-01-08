@@ -5,8 +5,6 @@ from tf_agents.trajectories import time_step as ts
 import numpy as np
 from typing import cast, TYPE_CHECKING
 import time
-import math
-import dill
 from functools import cached_property
 from .simulation import Simulation
 from runtime.episode_trajectory import DelverAction
@@ -49,16 +47,14 @@ class LevelEnvironment(PyEnvironment):
 
     def _init_specs(self):
         self._action_spec = {
-            "move": array_spec.BoundedArraySpec(
-                shape=(), dtype=np.float32, minimum=0.0, maximum=1.0, name="move"
+            "run": array_spec.BoundedArraySpec(
+                shape=(), dtype=np.int32, minimum=0, maximum=2, name="run"
             ),
-            "move_angle_cos": array_spec.BoundedArraySpec(
-                (), dtype=np.float32, minimum=-1.0, maximum=1.0, name="move_angle_cos"
-            ),
-            "move_angle_sin": array_spec.BoundedArraySpec(
-                (), dtype=np.float32, minimum=-1.0, maximum=1.0, name="move_angle_sin"
+            "jump": array_spec.BoundedArraySpec(
+                shape=(), dtype=np.int32, minimum=0, maximum=1, name="jump"
             ),
         }
+
         self._observation_spec = {
             "platforms": array_spec.ArraySpec(
                 shape=self.platforms_grid.shape, dtype=np.float32, name="platforms"
@@ -112,14 +108,15 @@ class LevelEnvironment(PyEnvironment):
         if self._episode_ended:
             return self._reset()
 
+        # Converts the neural network dictionary output to the game dict
         action_dict = self._get_dict_of_action(action)
         reward, self._episode_ended, _ = self.simulation.step(action_dict)
 
         if self._env_id == 0:
             self._logger.log_step(
                 reward=reward,
-                move=action_dict["move"],
-                move_angle=action_dict["move_angle"],
+                run=action_dict["run"],
+                jump=action_dict["jump"],
                 delver_position=self.observation["delver_position"],
                 global_frame_count=self._global_frame_counter.value,
                 simulation_frame=self.simulation.frame,
@@ -128,12 +125,20 @@ class LevelEnvironment(PyEnvironment):
 
         return self._create_time_step(reward)
 
-    def _get_dict_of_action(self, action):
-        move_angle_rad = math.atan2(action["move_angle_sin"], action["move_angle_cos"])
-        return DelverAction(
-            move=False if round(float(action["move"])) == 0 else True,
-            move_angle=float(math.degrees(move_angle_rad)),
-        )
+    def _get_dict_of_action(self, action) -> DelverAction:
+        """
+        Maps the Dictionary action to DelverAction.
+        action['run']: 0 (Left), 1 (Idle), 2 (Right)
+        action['jump']: 0 (False), 1 (True)
+        """
+
+        run_raw = int(action["run"])
+        jump = bool(action["jump"])
+
+        # Map: 0 -> -1, 1 -> 0, 2 -> 1
+        run = run_raw - 1
+
+        return DelverAction(run=run, jump=jump)
 
     def _create_time_step(self, reward):
         if self._episode_ended:
