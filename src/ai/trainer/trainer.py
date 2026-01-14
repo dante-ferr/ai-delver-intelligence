@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tf_agents.environments import parallel_py_environment
-from tf_agents.drivers import dynamic_episode_driver
+from tf_agents.drivers import dynamic_step_driver
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.utils import common
 from tf_agents.metrics import tf_metrics
@@ -22,8 +22,7 @@ if TYPE_CHECKING:
     from ai.sessions.session_manager import TrainingSession
     import asyncio
 
-# TOGGLE THIS TO TRUE TO DISABLE TENSORFLOW NETWORK PROCESSING
-BENCHMARK_MODE = True
+BENCHMARK_MODE = False
 
 def _create_level_environment(env_id: int, level_json: dict, session_id: str):
     """Factory to create a LevelEnvironment instance in a subprocess."""
@@ -41,9 +40,7 @@ class Trainer:
         self.session = session
         self.loop = loop
 
-        self.num_iteractions = (
-            session.amount_of_episodes // config.COLLECT_STEPS_PER_ITERATION
-        )
+        self.target_episodes = session.amount_of_episodes
 
         self.model_bytes = model_bytes
 
@@ -116,37 +113,47 @@ class Trainer:
         self.avg_episode_length_metric = tf_metrics.AverageEpisodeLengthMetric(
             batch_size=self.train_env.batch_size
         )
+        self.num_episodes_metric = tf_metrics.NumberOfEpisodes()
 
         observers_list = [
             self.replay_buffer.add_batch,
             self.avg_return_metric,
             self.avg_episode_length_metric,
+            self.num_episodes_metric,
         ]
 
         if not BENCHMARK_MODE:
             websocket_observer = WebSocketObserver(self.session.replay_queue, self.loop)
             observers_list.append(websocket_observer)
 
-        self.driver = dynamic_episode_driver.DynamicEpisodeDriver(
+        # CHANGED: Switched to DynamicStepDriver for fixed-length collection windows
+        self.driver = dynamic_step_driver.DynamicStepDriver(
             self.train_env,
             collect_policy,
-            observers=observers_list,  # Use a lista filtrada
-            num_episodes=config.COLLECT_STEPS_PER_ITERATION,
+            observers=observers_list,
+            num_steps=config.COLLECT_STEPS_PER_ITERATION,  # CHANGED: collects steps, not episodes
         )
 
     def train(self):
-        """Trains the agent until interrupted or the maximum number of iterations is reached. Returns the updated tensorflow model."""
-        logging.info(f"Starting training for {self.num_iteractions} iterations...")
+        """Trains the agent until interrupted or the maximum number of episodes is reached."""
+        logging.info(f"Starting training for target {self.target_episodes} episodes...")
+
+        time_step = self.train_env.current_time_step()
+
+        policy_state = self.driver.policy.get_initial_state(self.train_env.batch_size)
+
         self.driver.run = common.function(self.driver.run)
 
+        iteration = 0
         with self.summary_writer.as_default():
-            for iteration in range(self.num_iteractions):
+            while self.num_episodes_metric.result().numpy() < self.target_episodes:
                 if self._is_interrupted:
                     logging.info("Training was interrupted by a user request.")
                     break
 
-                # 1. COLLECTION PHASE
-                self.driver.run()
+                time_step, policy_state = self.driver.run(
+                    time_step=time_step, policy_state=policy_state
+                )
 
                 # 2. TRAINING PHASE (Backpropagation)
                 experience = self.replay_buffer.gather_all()
@@ -158,17 +165,18 @@ class Trainer:
                     step = self.agent.train_step_counter
                     if iteration % config.LOG_INTERVAL == 0:
                         logging.info(
-                            f"Iteration {iteration}: Step = {step}, Loss = {loss_info.loss.numpy()}"
+                            f"Iteration {iteration}: Step = {step}, Loss = {loss_info.loss.numpy()}, Episodes = {self.num_episodes_metric.result().numpy()}"
                         )
                         self._handle_tensorboard(loss_info, step)
                 else:
                     # Just log that we skipped training
                     if iteration % config.LOG_INTERVAL == 0:
                         logging.info(
-                            f"Iteration {iteration}: Simulation only (Benchmark Mode)"
+                            f"Iteration {iteration}: Simulation only (Benchmark Mode) - Episodes: {self.num_episodes_metric.result().numpy()}"
                         )
 
                 self.replay_buffer.clear()
+                iteration += 1
 
         if not self._is_interrupted:
             logging.info("Training finished.")
@@ -190,3 +198,6 @@ class Trainer:
         self.avg_episode_length_metric.reset()
 
         tf.summary.scalar("loss", loss_info.loss, step=step)
+        tf.summary.scalar(
+            "total_episodes", self.num_episodes_metric.result().numpy(), step=step
+        )

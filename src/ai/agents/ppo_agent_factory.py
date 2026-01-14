@@ -8,15 +8,27 @@ from typing import TYPE_CHECKING
 from ..utils import get_specs_from
 import keras
 from ai.config import config
+import logging
 
 if TYPE_CHECKING:
     from tf_agents.environments.tf_py_environment import TFPyEnvironment
 
-def check_gpu_available():
-    if tf.test.is_gpu_available():
-        print("GPU is available and being used for training.")
+
+def configure_gpu_memory():
+    """
+    Prevents TensorFlow from allocating ALL VRAM at once, which causes
+    system freezes (REISUB) on laptops when running alongside heavy simulations.
+    """
+    gpus = tf.config.list_physical_devices("GPU")
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logging.info(f"GPU Memory Growth enabled for: {gpus}")
+        except RuntimeError as e:
+            logging.error(f"Failed to set GPU memory growth: {e}")
     else:
-        print("WARNING: GPU is NOT available. Training will be slow.")
+        logging.warning("No GPU found. Training will run on CPU (SLOW).")
 
 
 class PPOAgentFactory:
@@ -27,10 +39,8 @@ class PPOAgentFactory:
         learning_rate=config.LEARNING_RATE,
         gamma=config.GAMMA,
     ):
+        configure_gpu_memory()
 
-        # --- Preprocessing Layers ---
-
-        # Flatten + Dense is faster than Conv2D for small local grids
         local_view_preprocessing = keras.Sequential(
             [
                 keras.layers.Flatten(),
@@ -57,8 +67,6 @@ class PPOAgentFactory:
 
         preprocessing_combiner = keras.layers.Concatenate()
         time_step_spec, action_spec, observation_spec = get_specs_from(train_env)
-
-        # --- LSTM Configuration ---
 
         # Layers before LSTM (Input Processing)
         input_fc_layer_params = (256, 128)
@@ -103,11 +111,10 @@ class PPOAgentFactory:
             entropy_regularization=config.ENTROPY_REGULARIZATION,
             use_gae=True,
             use_td_lambda_return=True,
-            num_epochs=25,
+            num_epochs=5,
         )
 
         self.agent.initialize()
-        check_gpu_available()
 
     def get_agent(self):
         return self.agent
