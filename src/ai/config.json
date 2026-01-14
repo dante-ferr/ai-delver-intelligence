@@ -1,5 +1,5 @@
 {
-  "learning_rate": 0.0003,
+  "learning_rate": 0.001,
   "gamma": 0.99,
   "entropy_regularization": 0.01,
 
@@ -8,12 +8,12 @@
   "turn_reward": 0.0,
   "frame_step_reward": -0.01,
   "tile_exploration_reward": 0.1,
-  "jump_reward": -0.05,
+  "jump_reward": -0.4,
 
   "replay_buffer_capacity": 10000,
-  "replay_buffer_batch_size": 128,
-  "collect_steps_per_iteration": 200,
-  "env_batch_size": 10,
+  "replay_buffer_batch_size": 256,
+  "collect_steps_per_iteration": 2048,
+  "env_batch_size": 20,
   "actions_per_second": 10,
   "max_seconds_per_episode": 60,
   "log_interval": 1,

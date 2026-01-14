@@ -16,11 +16,14 @@ from ._web_socket_observer import WebSocketObserver
 from ._trainer_model_manager import TrainerModelManager
 from ai.sessions.session_manager import session_manager
 from typing import TYPE_CHECKING
+from tf_agents.policies import random_tf_policy
 
 if TYPE_CHECKING:
     from ai.sessions.session_manager import TrainingSession
     import asyncio
 
+# TOGGLE THIS TO TRUE TO DISABLE TENSORFLOW NETWORK PROCESSING
+BENCHMARK_MODE = True
 
 def _create_level_environment(env_id: int, level_json: dict, session_id: str):
     """Factory to create a LevelEnvironment instance in a subprocess."""
@@ -82,14 +85,27 @@ class Trainer:
                 logging.error(
                     f"Failed to deserialize or load the model: {e}. Training will start with a new model."
                 )
-                # If loading fails, ensure we start from step 0.
                 self.agent.train_step_counter.assign(0)
         else:
-            # If no model is provided, start training from scratch.
             self.agent.train_step_counter.assign(0)
 
+        if BENCHMARK_MODE:
+            logging.warning(
+                "BENCHMARK MODE ACTIVE: Using Random Policy (No Neural Net Inference)."
+            )
+            # RandomTFPolicy generates valid random tensors without running a heavy model
+            collect_policy = random_tf_policy.RandomTFPolicy(
+                self.train_env.time_step_spec(), self.train_env.action_spec()
+            )
+
+            collect_data_spec = collect_policy.trajectory_spec
+        else:
+            collect_policy = self.agent.collect_policy
+            # Use the PPO Agent's spec (contains logits in policy_info) for the buffer
+            collect_data_spec = self.agent.collect_data_spec
+
         self.replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-            data_spec=self.agent.collect_data_spec,
+            data_spec=collect_data_spec,  # Uses the spec matching the active policy
             batch_size=self.train_env.batch_size,
             max_length=config.REPLAY_BUFFER_CAPACITY,
         )
@@ -101,17 +117,20 @@ class Trainer:
             batch_size=self.train_env.batch_size
         )
 
-        websocket_observer = WebSocketObserver(self.session.replay_queue, self.loop)
+        observers_list = [
+            self.replay_buffer.add_batch,
+            self.avg_return_metric,
+            self.avg_episode_length_metric,
+        ]
+
+        if not BENCHMARK_MODE:
+            websocket_observer = WebSocketObserver(self.session.replay_queue, self.loop)
+            observers_list.append(websocket_observer)
 
         self.driver = dynamic_episode_driver.DynamicEpisodeDriver(
             self.train_env,
-            self.agent.collect_policy,
-            observers=[
-                self.replay_buffer.add_batch,
-                self.avg_return_metric,
-                self.avg_episode_length_metric,
-                websocket_observer,
-            ],
+            collect_policy,
+            observers=observers_list,  # Use a lista filtrada
             num_episodes=config.COLLECT_STEPS_PER_ITERATION,
         )
 
@@ -122,25 +141,34 @@ class Trainer:
 
         with self.summary_writer.as_default():
             for iteration in range(self.num_iteractions):
-                # Check for interruption before starting a new iteration.
                 if self._is_interrupted:
                     logging.info("Training was interrupted by a user request.")
                     break
 
-                # Collect a sequence of episodes.
+                # 1. COLLECTION PHASE
                 self.driver.run()
 
-                # Train the agent with the collected experience.
+                # 2. TRAINING PHASE (Backpropagation)
                 experience = self.replay_buffer.gather_all()
-                loss_info = self.agent.train(experience)
-                self.replay_buffer.clear()
 
-                step = self.agent.train_step_counter
-                if iteration % config.LOG_INTERVAL == 0:
-                    logging.info(
-                        f"Iteration {iteration}: Step = {step}, Loss = {loss_info.loss.numpy()}"
-                    )
-                    self._handle_tensorboard(loss_info, step)
+                if not BENCHMARK_MODE:
+                    # ONLY TRAIN IF NOT BENCHMARKING
+                    loss_info = self.agent.train(experience)
+
+                    step = self.agent.train_step_counter
+                    if iteration % config.LOG_INTERVAL == 0:
+                        logging.info(
+                            f"Iteration {iteration}: Step = {step}, Loss = {loss_info.loss.numpy()}"
+                        )
+                        self._handle_tensorboard(loss_info, step)
+                else:
+                    # Just log that we skipped training
+                    if iteration % config.LOG_INTERVAL == 0:
+                        logging.info(
+                            f"Iteration {iteration}: Simulation only (Benchmark Mode)"
+                        )
+
+                self.replay_buffer.clear()
 
         if not self._is_interrupted:
             logging.info("Training finished.")

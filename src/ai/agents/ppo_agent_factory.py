@@ -1,7 +1,7 @@
 from tf_agents.agents.ppo import ppo_agent
 from tf_agents.networks import (
-    actor_distribution_network,
-    value_network,
+    actor_distribution_rnn_network,
+    value_rnn_network,
 )
 import tensorflow as tf
 from typing import TYPE_CHECKING
@@ -29,62 +29,63 @@ class PPOAgentFactory:
     ):
 
         # --- Preprocessing Layers ---
-        # OPTIMIZATION: Removed Conv2D.
-        # Since the input is a binary grid (0/1) and not a complex RGB image,
-        # flattening and using Dense layers is significantly faster for the CPU/GPU
-        # and sufficient for the agent to learn local topology.
-        platforms_preprocessing = keras.Sequential(
+
+        # Flatten + Dense is faster than Conv2D for small local grids
+        local_view_preprocessing = keras.Sequential(
             [
                 keras.layers.Flatten(),
-                keras.layers.Dense(
-                    64, activation="relu"
-                ),  # Reduced from 128 to 64 for speed
+                keras.layers.Dense(128, activation="relu"),
             ],
-            name="platforms_preprocessing",
+            name="local_view_preprocessing",
         )
 
-        position_preprocessing = keras.Sequential(
+        global_state_preprocessing = keras.Sequential(
             [
                 keras.layers.LayerNormalization(axis=-1),
-                keras.layers.Dense(
-                    32, activation="relu", name="position_preprocessing"
-                ),
+                keras.layers.Dense(64, activation="relu"),
             ],
-            name="position_preprocessing",
+            name="global_state_preprocessing",
         )
 
         preprocessing_layers = {
-            "platforms": platforms_preprocessing,
-            "delver_position": position_preprocessing,
-            "goal_position": position_preprocessing,
+            "local_view": local_view_preprocessing,
+            "global_state": global_state_preprocessing,
             "replay_json": keras.layers.Lambda(
-                lambda x: tf.zeros(shape=(tf.shape(x)[0], 0))  # Ignore replay string
+                lambda x: tf.zeros(shape=(tf.shape(x)[0], 0))
             ),
         }
 
         preprocessing_combiner = keras.layers.Concatenate()
-
-        # Get specs automatically (now supports the dictionary action spec)
         time_step_spec, action_spec, observation_spec = get_specs_from(train_env)
 
-        # Main logic layers (Brain)
-        fc_layer_params = (128, 64)
+        # --- LSTM Configuration ---
 
-        # Actor Network: Handles the Dict action spec automatically, creating separate heads for 'move' and 'jump'
-        actor_net = actor_distribution_network.ActorDistributionNetwork(
+        # Layers before LSTM (Input Processing)
+        input_fc_layer_params = (256, 128)
+
+        # LSTM Cell Size (Memory)
+        lstm_size = (128,)
+
+        # Layers after LSTM (Decision)
+        output_fc_layer_params = (128,)
+
+        actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
             observation_spec,
             action_spec,
             preprocessing_layers=preprocessing_layers,
             preprocessing_combiner=preprocessing_combiner,
-            fc_layer_params=fc_layer_params,
+            input_fc_layer_params=input_fc_layer_params,
+            lstm_size=lstm_size,
+            output_fc_layer_params=output_fc_layer_params,
         )
 
-        # Value Network: Estimates how good the current state is
-        value_net = value_network.ValueNetwork(
+        value_net = value_rnn_network.ValueRnnNetwork(
             observation_spec,
             preprocessing_layers=preprocessing_layers,
             preprocessing_combiner=preprocessing_combiner,
-            fc_layer_params=fc_layer_params,
+            input_fc_layer_params=input_fc_layer_params,
+            lstm_size=lstm_size,
+            output_fc_layer_params=output_fc_layer_params,
         )
 
         optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
@@ -95,13 +96,14 @@ class PPOAgentFactory:
             actor_net=actor_net,
             value_net=value_net,
             optimizer=optimizer,
-            normalize_observations=False,  # We handle norm in preprocessing layers
-            normalize_rewards=True,  # Critical for PPO stability
+            normalize_observations=False,
+            normalize_rewards=True,
             discount_factor=gamma,
             train_step_counter=tf.Variable(0, dtype=tf.int64),
             entropy_regularization=config.ENTROPY_REGULARIZATION,
             use_gae=True,
             use_td_lambda_return=True,
+            num_epochs=25,
         )
 
         self.agent.initialize()

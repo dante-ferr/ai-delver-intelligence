@@ -3,7 +3,6 @@ import numpy as np
 
 
 class DelverObservation(TypedDict):
-    platforms: np.ndarray
-    delver_position: np.ndarray
-    goal_position: np.ndarray
+    local_view: np.ndarray
+    global_state: np.ndarray
     replay_json: np.ndarray

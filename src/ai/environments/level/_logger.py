@@ -23,7 +23,7 @@ class CustomFormatter(logging.Formatter):
 
     # Detailed format specifically for step-by-step training data
     # Updated to show Jump status instead of Angle
-    detailed_fmt = "%(asctime)s - Global Frame: %(global_frame_count)s | Sim Frame: %(simulation_frame)s | Reward: %(reward)s | Pos: %(delver_position)s | Run: %(run)s | Jump: %(jump)s | FPS: %(fps)s"
+    detailed_fmt = "%(asctime)s - Global Frame: %(global_frame_count)s | Sim Frame: %(simulation_frame)s | Reward: %(reward)s | Pos: %(delver_position)s | Run: %(run)s | Jump: %(jump)s | Avg FPS: %(fps)s"
 
     def __init__(self):
         super().__init__(fmt="%(levelname)s: %(message)s", datefmt=None, style="%")
@@ -78,7 +78,7 @@ class LevelEnvironmentLogger:
         fps,
     ):
         current_time = time.time()
-        if (current_time - self.last_step_log_time) >= 1.0:  # Throttled to 1 second
+        if (current_time - self.last_step_log_time) >= 0.25:  # Throttled to 1 second
             # This call is detailed. The formatter will see the attributes in extra
             # and use the detailed format automatically.
             self.logger.info(
