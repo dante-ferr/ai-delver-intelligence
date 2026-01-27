@@ -2,36 +2,83 @@ from tf_agents.agents.ppo import ppo_agent
 from tf_agents.networks import (
     actor_distribution_rnn_network,
     value_rnn_network,
+    categorical_projection_network,
+    network,
 )
+from tf_agents.specs import tensor_spec
 import tensorflow as tf
+import tensorflow_probability as tfp
+import functools
 from typing import TYPE_CHECKING
 from ..utils import get_specs_from
 import keras
 from ai.config import config
-import logging
 
 if TYPE_CHECKING:
     from tf_agents.environments.tf_py_environment import TFPyEnvironment
 
 
-def configure_gpu_memory():
+class CategoricalOutputSpec:
     """
-    Prevents TensorFlow from allocating ALL VRAM at once, which causes
-    system freezes (REISUB) on laptops when running alongside heavy simulations.
+    A helper class to act as a distribution spec without instantiating a real distribution.
+    This avoids issues with TensorSpecs in newer TensorFlow Probability versions.
     """
-    gpus = tf.config.list_physical_devices("GPU")
-    if gpus:
-        try:
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            logging.info(f"GPU Memory Growth enabled for: {gpus}")
-        except RuntimeError as e:
-            logging.error(f"Failed to set GPU memory growth: {e}")
-    else:
-        logging.warning("No GPU found. Training will run on CPU (SLOW).")
+
+    def __init__(self, sample_spec):
+        self.sample_spec = sample_spec
+        self.dtype = sample_spec.dtype
+        num_atoms = sample_spec.maximum - sample_spec.minimum + 1
+        self.input_params_spec = {
+            "logits": tensor_spec.TensorSpec(
+                shape=(num_atoms,), dtype=tf.float32, name="logits"
+            )
+        }
+
+
+class Float32CategoricalProjectionNetwork(network.DistributionNetwork):
+    """
+    A custom projection network that forces float32 logits for numerical stability,
+    even when the rest of the model uses mixed precision (float16).
+    """
+
+    def __init__(
+        self,
+        sample_spec,
+        logits_init_output_factor=0.1,
+        name="Float32CategoricalProjectionNetwork",
+    ):
+        self._sample_spec = sample_spec
+        self._num_atoms = sample_spec.maximum - sample_spec.minimum + 1
+
+        output_spec = CategoricalOutputSpec(sample_spec)
+
+        super().__init__(
+            input_tensor_spec=None, state_spec=(), output_spec=output_spec, name=name
+        )
+
+        # Force float32 for the logits layer to avoid float16/float32 mismatches
+        self._projection_layer = keras.layers.Dense(
+            self._num_atoms,
+            kernel_initializer=tf.compat.v1.initializers.random_uniform(
+                minval=-logits_init_output_factor, maxval=logits_init_output_factor
+            ),
+            dtype=tf.float32,
+            name="logits",
+        )
+
+    def call(self, inputs, outer_rank=1, training=False, mask=None):
+        logits = self._projection_layer(inputs, training=training)
+        distribution = tfp.distributions.Categorical(
+            logits=logits, dtype=self._sample_spec.dtype
+        )
+        return distribution, ()
 
 
 class PPOAgentFactory:
+    """
+    Factory class responsible for building the PPO Agent, including the Actor and Value
+    RNN networks and their respective preprocessing layers.
+    """
 
     def __init__(
         self,
@@ -39,7 +86,8 @@ class PPOAgentFactory:
         learning_rate=config.LEARNING_RATE,
         gamma=config.GAMMA,
     ):
-        configure_gpu_memory()
+        policy = keras.mixed_precision.global_policy()
+        compute_dtype = policy.compute_dtype
 
         local_view_preprocessing = keras.Sequential(
             [
@@ -61,21 +109,19 @@ class PPOAgentFactory:
             "local_view": local_view_preprocessing,
             "global_state": global_state_preprocessing,
             "replay_json": keras.layers.Lambda(
-                lambda x: tf.zeros(shape=(tf.shape(x)[0], 0))
+                # replay_json is for external observers; we zero it out for the agent's input
+                lambda x: tf.zeros(shape=(tf.shape(x)[0], 0), dtype=compute_dtype)
             ),
         }
 
         preprocessing_combiner = keras.layers.Concatenate()
         time_step_spec, action_spec, observation_spec = get_specs_from(train_env)
 
-        # Layers before LSTM (Input Processing)
         input_fc_layer_params = (256, 128)
-
-        # LSTM Cell Size (Memory)
         lstm_size = (128,)
-
-        # Layers after LSTM (Decision)
         output_fc_layer_params = (128,)
+
+        discrete_projection_net = Float32CategoricalProjectionNetwork
 
         actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
             observation_spec,
@@ -85,6 +131,7 @@ class PPOAgentFactory:
             input_fc_layer_params=input_fc_layer_params,
             lstm_size=lstm_size,
             output_fc_layer_params=output_fc_layer_params,
+            discrete_projection_net=discrete_projection_net,
         )
 
         value_net = value_rnn_network.ValueRnnNetwork(
@@ -112,9 +159,12 @@ class PPOAgentFactory:
             use_gae=True,
             use_td_lambda_return=True,
             num_epochs=5,
+            check_numerics=False,
+            debug_summaries=False,
         )
 
         self.agent.initialize()
 
     def get_agent(self):
+        """Returns the initialized PPO agent."""
         return self.agent

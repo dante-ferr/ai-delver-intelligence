@@ -10,12 +10,13 @@
   "tile_exploration_reward": 0.1,
   "jump_reward": -0.4,
 
-  "replay_buffer_capacity": 10000,
-  "replay_buffer_batch_size": 256,
-  "collect_steps_per_iteration": 2048,
-  "env_batch_size": 20,
+  "replay_buffer_capacity": 50000,
+  "replay_buffer_batch_size": 512,
+  "collect_seconds_per_env": 30,
   "actions_per_second": 10,
   "max_seconds_per_episode": 60,
+
   "log_interval": 1,
+
   "seed": 42
 }

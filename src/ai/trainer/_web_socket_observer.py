@@ -13,10 +13,6 @@ class WebSocketObserver:
         self._loop = loop
 
     def _send_to_queue(self, json_tensor: tf.Tensor):
-        """
-        This is the pure Python logic that runs outside the main graph.
-        It no longer needs to return a value.
-        """
         for (
             json_string_bytes
         ) in (
