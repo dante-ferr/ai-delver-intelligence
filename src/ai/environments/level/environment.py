@@ -13,6 +13,7 @@ from ._reward_calculator import RewardCalculator
 from ai.sessions import REGISTRY_LOCK, SESSION_REGISTRY
 from level import Level
 from ._dijkstra_grid import DijkstraGrid
+from ai.config import config
 
 if TYPE_CHECKING:
     from ._delver_observation import DelverObservation
@@ -176,8 +177,11 @@ class LevelEnvironment(PyEnvironment):
         reward = np.array(reward, dtype=np.float32)
 
         if self._env_id == 0:
+            # Reverse scaling for human readability in logs
+            human_readable_reward = float(reward) / config.REWARD_SCALE_FACTOR
+
             self._logger.log_step(
-                reward=float(reward),
+                reward=human_readable_reward,
                 run=action_dict["run"],
                 jump=action_dict["jump"],
                 delver_position=self.delver_position,
