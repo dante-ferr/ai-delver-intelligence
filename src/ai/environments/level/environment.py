@@ -9,8 +9,10 @@ from functools import cached_property
 from .simulation import Simulation
 from runtime.episode_trajectory import DelverAction
 from ._logger import LevelEnvironmentLogger
+from ._reward_calculator import RewardCalculator
 from ai.sessions import REGISTRY_LOCK, SESSION_REGISTRY
 from level import Level
+from ._dijkstra_grid import DijkstraGrid
 
 if TYPE_CHECKING:
     from ._delver_observation import DelverObservation
@@ -33,25 +35,13 @@ class LevelEnvironment(PyEnvironment):
         self._level = Level.from_dict(level_json)
         self._session_id = session_id
 
-        with REGISTRY_LOCK:
-            session_objects = SESSION_REGISTRY[self._session_id]
+        self._init_level_and_simulation(level_json)
+        self._init_reward_system()
+        self._init_global_frame_tracking(session_id)
+        self._init_logger(env_id)
+        self._init_specs_and_types()
+        self._init_runtime_metrics()
 
-        self._global_frame_counter = session_objects["frame_counter"]
-        self._global_frame_lock = session_objects["frame_lock"]
-        with self._global_frame_lock:
-            self._last_frame_count = self._global_frame_counter.value
-            self._initial_frame_count = self._last_frame_count
-
-        self._restart_simulation()
-        self._episodes = 0
-
-        if self._env_id == 0:
-            self._logger = LevelEnvironmentLogger()
-
-        self._init_specs()
-
-        # Explicitly set protected attributes required by TFPyEnvironment
-        # to correctly identify the reward and discount specs.
         self._reward_spec = array_spec.ArraySpec(
             shape=(), dtype=np.float32, name="reward"
         )
@@ -59,16 +49,56 @@ class LevelEnvironment(PyEnvironment):
             shape=(), dtype=np.float32, name="discount"
         )
 
+    def _init_level_and_simulation(self, level_json: dict):
+        """Initializes the game level and the simulation runtime."""
+        self._level = Level.from_dict(level_json)
+        self.simulation = Simulation(self._level)
+
+    def _init_reward_system(self):
+        """Sets up the Dijkstra grid and the reward calculator."""
+        # Instantiate Dijkstra Map locally.
+        # Computing BFS for tilemaps is extremely fast (<1ms), so no need for complex JSON serialization overhead.
+        tile_w, tile_h = self._level.map.tile_size
+        goal_tx = int(self.goal_position[0] // tile_w)
+        goal_ty = int(self.goal_position[1] // tile_h)
+
+        self.dijkstra = DijkstraGrid(self._level.map.tilemap, (goal_tx, goal_ty))
+        self.reward_calculator = RewardCalculator(self._level, self.dijkstra)
+        self.reward_calculator.reset(self.simulation)
+
+    def _init_global_frame_tracking(self, session_id: str):
+        """Initializes shared global frame counters for synchronization."""
+        with REGISTRY_LOCK:
+            session_objects = SESSION_REGISTRY[session_id]
+
+        self._global_frame_counter = session_objects["frame_counter"]
+        self._global_frame_lock = session_objects["frame_lock"]
+        with self._global_frame_lock:
+            self._last_frame_count = self._global_frame_counter.value
+            self._initial_frame_count = self._last_frame_count
+
+    def _init_logger(self, env_id: int):
+        """Initializes the episode counter and the logger for environment 0."""
+        self._episodes = 0
+        if env_id == 0:
+            self._logger = LevelEnvironmentLogger()
+
+    def _init_specs_and_types(self):
+        """Defines the action, observation, reward, and discount specifications."""
+        self._init_specs()
+
+    def _init_runtime_metrics(self):
+        """Initializes variables for tracking episode state and performance metrics."""
         self._episode_ended = False
         self._last_fps_time = time.time()
         self._start_time = time.time()
-
         self.fps = 0.0
         self.avg_fps = 0.0
 
     def _restart_simulation(self):
         """Re-initializes the simulation state for a new episode."""
         self.simulation = Simulation(self._level)
+        self.reward_calculator.reset(self.simulation)
 
     def _init_specs(self):
         """Defines the action and observation schemas for the environment."""
@@ -140,8 +170,9 @@ class LevelEnvironment(PyEnvironment):
             return self._reset()
 
         action_dict = self._get_dict_of_action(action)
-        reward, self._episode_ended, _ = self.simulation.step(action_dict)
+        self._episode_ended, _ = self.simulation.step(action_dict)
 
+        reward = self.reward_calculator.calculate_reward(self.simulation, action_dict)
         reward = np.array(reward, dtype=np.float32)
 
         if self._env_id == 0:
@@ -186,7 +217,6 @@ class LevelEnvironment(PyEnvironment):
         view_y_s, view_x_s = max(0, -y_start), max(0, -x_start)
         view_y_e = view_y_s + (grid_y_e - grid_y_s)
         view_x_e = view_x_s + (grid_x_e - grid_x_s)
-        # If the window is partially outside the grid, the 'view' remains 1 (solid) in those areas
 
         if grid_y_e > grid_y_s and grid_x_e > grid_x_s:
             view[view_y_s:view_y_e, view_x_s:view_x_e] = grid[
@@ -242,10 +272,10 @@ class LevelEnvironment(PyEnvironment):
 
     @property
     def delver_position(self):
-        """Current position of the agent."""
+        """Current position of the agent (Pixels)."""
         return self.simulation.delver.position
 
     @property
     def goal_position(self):
-        """Position of the level goal."""
+        """Position of the level goal (Pixels)."""
         return self.simulation.goal.position

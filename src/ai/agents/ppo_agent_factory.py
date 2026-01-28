@@ -2,17 +2,15 @@ from tf_agents.agents.ppo import ppo_agent
 from tf_agents.networks import (
     actor_distribution_rnn_network,
     value_rnn_network,
-    categorical_projection_network,
     network,
 )
 from tf_agents.specs import tensor_spec
 import tensorflow as tf
 import tensorflow_probability as tfp
-import functools
-from typing import TYPE_CHECKING
-from ..utils import get_specs_from
 import keras
 from ai.config import config
+from ..utils import get_specs_from
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from tf_agents.environments.tf_py_environment import TFPyEnvironment
@@ -20,8 +18,8 @@ if TYPE_CHECKING:
 
 class CategoricalOutputSpec:
     """
-    A helper class to act as a distribution spec without instantiating a real distribution.
-    This avoids issues with TensorSpecs in newer TensorFlow Probability versions.
+    A helper class to act as a distribution spec.
+    Fixes the 'CategoricalOutputSpec' object has no attribute 'build_distribution' error.
     """
 
     def __init__(self, sample_spec):
@@ -33,6 +31,13 @@ class CategoricalOutputSpec:
                 shape=(num_atoms,), dtype=tf.float32, name="logits"
             )
         }
+
+    def build_distribution(self, logits=None, **kwargs):
+        """
+        Builds the Categorical distribution from the given logits.
+        This is required by tf_agents during the training step.
+        """
+        return tfp.distributions.Categorical(logits=logits, dtype=self.dtype)
 
 
 class Float32CategoricalProjectionNetwork(network.DistributionNetwork):
@@ -68,9 +73,8 @@ class Float32CategoricalProjectionNetwork(network.DistributionNetwork):
 
     def call(self, inputs, outer_rank=1, training=False, mask=None):
         logits = self._projection_layer(inputs, training=training)
-        distribution = tfp.distributions.Categorical(
-            logits=logits, dtype=self._sample_spec.dtype
-        )
+        # We delegate the distribution creation to the spec/tfp, ensuring consistency
+        distribution = self.output_spec.build_distribution(logits=logits)
         return distribution, ()
 
 
@@ -152,7 +156,7 @@ class PPOAgentFactory:
             value_net=value_net,
             optimizer=optimizer,
             normalize_observations=False,
-            normalize_rewards=True,
+            normalize_rewards=False,
             discount_factor=gamma,
             train_step_counter=tf.Variable(0, dtype=tf.int64),
             entropy_regularization=config.ENTROPY_REGULARIZATION,

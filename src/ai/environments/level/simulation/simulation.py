@@ -22,8 +22,6 @@ class Simulation(Runtime):
         self.elapsed_time = 0.0
         self.frame = 0
 
-        self.total_reward = 0
-
         self.exploration_grid = ExplorationGrid(level.map.size[0], level.map.size[1])
 
         self.episode_trajectory = EpisodeTrajectory(
@@ -47,42 +45,12 @@ class Simulation(Runtime):
         self.last_action = action
         self.update(DT)
 
-        reward = self._get_reward(action)
-        self.total_reward += reward
-
         self.frame += 1
 
         if self.reached_goal:
             self.episode_trajectory.victorious = True
 
-        return reward, self.ended, self.elapsed_time
-
-    def _get_reward(self, action: "DelverAction"):
-        reward = 0
-
-        if self.reached_goal:
-            reward += config.FINISHED_REWARD
-        elif self.time_is_over:
-            reward += config.NOT_FINISHED_REWARD
-
-        if (
-            self.last_action
-            and self.last_action["run"] != 0
-            and action["run"] != 0
-            and self.last_action["run"] != action["run"]
-        ):
-            reward += config.TURN_PENALTY
-
-        if action["jump"]:
-            reward += config.JUMP_REWARD
-
-        reward += config.FRAME_STEP_REWARD
-
-        new_explorated_tile = self.exploration_grid.step_on(self.delver.position)
-        if new_explorated_tile:
-            reward += config.TILE_EXPLORATION_REWARD
-
-        return reward
+        return self.ended, self.elapsed_time
 
     @property
     def ended(self):
