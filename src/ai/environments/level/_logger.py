@@ -23,7 +23,7 @@ class CustomFormatter(logging.Formatter):
 
     # Detailed format specifically for step-by-step training data
     # Updated to show Jump status instead of Angle
-    detailed_fmt = "%(asctime)s - Global Frame: %(global_frame_count)s | Sim Frame: %(simulation_frame)s | Reward: %(reward)s | Pos: %(delver_position)s | Run: %(run)s | Jump: %(jump)s | Avg FPS: %(fps)s"
+    detailed_fmt = "%(asctime)s - Global Frame: %(global_frame_count)s | Sim Frame: %(simulation_frame)s | Reward: %(reward)s | Avg FPS: %(fps)s"
 
     def __init__(self):
         super().__init__(fmt="%(levelname)s: %(message)s", datefmt=None, style="%")
@@ -70,9 +70,6 @@ class LevelEnvironmentLogger:
     def log_step(
         self,
         reward,
-        run,
-        jump,
-        delver_position,
         global_frame_count,
         simulation_frame,
         fps,
@@ -87,9 +84,6 @@ class LevelEnvironmentLogger:
                     "global_frame_count": global_frame_count,
                     "simulation_frame": simulation_frame,
                     "reward": f"{reward:.4f}",
-                    "delver_position": f"({delver_position[0]:.1f}, {delver_position[1]:.1f})",
-                    "run": run,
-                    "jump": jump,
                     "fps": f"{fps:.1f}",
                 },
             )

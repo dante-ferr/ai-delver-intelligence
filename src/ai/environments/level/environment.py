@@ -7,6 +7,7 @@ from typing import cast, TYPE_CHECKING
 import time
 from functools import cached_property
 from .simulation import Simulation
+from .simulation.showcase_simulation import ShowcaseSimulation
 from runtime.episode_trajectory import DelverAction
 from ._logger import LevelEnvironmentLogger
 from ._reward_calculator import RewardCalculator
@@ -22,24 +23,31 @@ if TYPE_CHECKING:
 class LevelEnvironment(PyEnvironment):
     """
     A custom TF-Agents environment that wraps the Delver simulation.
-
-    It handles the mapping between simulation state and RL observations,
-    manages global frame counters for synchronization, and provides
-    a local grid view centered on the agent.
+    Supports both 'Training' (lightweight) and 'Showcase' (recording) modes.
     """
     WINDOW_SIZE = 15
 
-    def __init__(self, env_id: int, level_json: dict, session_id: str):
+    def __init__(
+        self, env_id: int, level_json: dict, session_id: str, is_showcase: bool = False
+    ):
         super().__init__()
 
         self._env_id = env_id
-        self._level = Level.from_dict(level_json)
+        self._level_json = level_json
         self._session_id = session_id
+        self._is_showcase = is_showcase
 
-        self._init_level_and_simulation(level_json)
+        self._init_level_and_simulation()
         self._init_reward_system()
-        self._init_global_frame_tracking(session_id)
-        self._init_logger(env_id)
+
+        # Showcase environments don't need global frame tracking or loggers
+        if not self._is_showcase:
+            self._init_global_frame_tracking(session_id)
+            self._init_logger(env_id)
+        else:
+            self._global_frame_counter = None
+            self._logger = None
+
         self._init_specs_and_types()
         self._init_runtime_metrics()
 
@@ -50,10 +58,14 @@ class LevelEnvironment(PyEnvironment):
             shape=(), dtype=np.float32, name="discount"
         )
 
-    def _init_level_and_simulation(self, level_json: dict):
-        """Initializes the game level and the simulation runtime."""
-        self._level = Level.from_dict(level_json)
-        self.simulation = Simulation(self._level)
+    def _init_level_and_simulation(self):
+        """Initializes the simulation. Uses ShowcaseSimulation if is_showcase is True."""
+        self._level = Level.from_dict(self._level_json)
+
+        if self._is_showcase:
+            self.simulation = ShowcaseSimulation(self._level)
+        else:
+            self.simulation = Simulation(self._level)
 
     def _init_reward_system(self):
         """Sets up the Dijkstra grid and the reward calculator."""
@@ -81,6 +93,7 @@ class LevelEnvironment(PyEnvironment):
     def _init_logger(self, env_id: int):
         """Initializes the episode counter and the logger for environment 0."""
         self._episodes = 0
+        self._logger = None  # Ensure attribute exists for all envs
         if env_id == 0:
             self._logger = LevelEnvironmentLogger()
 
@@ -91,14 +104,18 @@ class LevelEnvironment(PyEnvironment):
     def _init_runtime_metrics(self):
         """Initializes variables for tracking episode state and performance metrics."""
         self._episode_ended = False
-        self._last_fps_time = time.time()
         self._start_time = time.time()
         self.fps = 0.0
         self.avg_fps = 0.0
 
     def _restart_simulation(self):
         """Re-initializes the simulation state for a new episode."""
-        self.simulation = Simulation(self._level)
+        # Re-instantiate based on mode
+        if self._is_showcase:
+            self.simulation = ShowcaseSimulation(self._level)
+        else:
+            self.simulation = Simulation(self._level)
+
         self.reward_calculator.reset(self.simulation)
 
     def _init_specs(self):
@@ -135,8 +152,9 @@ class LevelEnvironment(PyEnvironment):
         return cast(NestedArraySpec, self._observation_spec)
 
     def _reset(self):
-        """Resets the environment to the starting state."""
-        self._episodes += 1
+        if not self._is_showcase:
+            self._episodes += 1
+
         self._episode_ended = False
         self._restart_simulation()
 
@@ -147,12 +165,14 @@ class LevelEnvironment(PyEnvironment):
         )
 
     def _count_frame(self):
-        """Increments the shared global frame counter."""
-        with self._global_frame_lock:
-            self._global_frame_counter.value += 1
+        if self._global_frame_counter:
+            with self._global_frame_lock:
+                self._global_frame_counter.value += 1
 
     def _calculate_fps(self):
-        """Calculates the average frames per second since the start of the session."""
+        if not self._global_frame_counter:
+            return 0.0
+
         with self._global_frame_lock:
             current_frame = self._global_frame_counter.value
 
@@ -176,16 +196,17 @@ class LevelEnvironment(PyEnvironment):
         reward = self.reward_calculator.calculate_reward(self.simulation, action_dict)
         reward = np.array(reward, dtype=np.float32)
 
-        if self._env_id == 0:
-            # Reverse scaling for human readability in logs
+        # Updated check: safe because self._logger is always initialized in _init_logger
+        if self._logger and self._env_id == 0:
             human_readable_reward = float(reward) / config.REWARD_SCALE_FACTOR
 
             self._logger.log_step(
                 reward=human_readable_reward,
-                run=action_dict["run"],
-                jump=action_dict["jump"],
-                delver_position=self.delver_position,
-                global_frame_count=self._global_frame_counter.value,
+                global_frame_count=(
+                    self._global_frame_counter.value
+                    if self._global_frame_counter
+                    else 0
+                ),
                 simulation_frame=self.simulation.frame,
                 fps=self._calculate_fps(),
             )
@@ -233,9 +254,16 @@ class LevelEnvironment(PyEnvironment):
         """Wraps the current observation and reward into a TF-Agents TimeStep."""
         if self._episode_ended:
             obs = self.observation
-            obs["replay_json"] = np.array(
-                self.simulation.episode_trajectory.to_json(), dtype=str
-            )
+
+            # Logic: Only populate the JSON if we are in Showcase mode
+            # This saves massive CPU/Memory during training
+            replay_json_str = ""
+            if self._is_showcase:
+                self.simulation = cast(ShowcaseSimulation, self.simulation)
+                replay_json_str = self.simulation.episode_trajectory.to_json()
+
+            obs["replay_json"] = np.array(replay_json_str, dtype=str)
+
             time_step = ts.termination(obs, reward)
             return time_step._replace(discount=np.array(0.0, dtype=np.float32))
 

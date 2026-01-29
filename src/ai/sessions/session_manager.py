@@ -5,14 +5,19 @@ import asyncio
 import multiprocessing as mp
 import logging
 from ai.trainer._trainer_factory import trainer_factory
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from api.routes import TrainRequest
 
 
 class TrainingSession:
     """Holds all resources for a single, isolated training run."""
 
-    def __init__(self, level_json: dict, amount_of_episodes: int):
-        self.level_json: dict = level_json
-        self.amount_of_episodes = amount_of_episodes
+    def __init__(self, request: "TrainRequest"):
+        self.level_json: dict = request.level
+        self.amount_of_cycles = request.amount_of_cycles
+        self.episodes_per_cycle = request.episodes_per_cycle
 
         self.session_id: str = str(uuid.uuid4())
         self.trainer = trainer_factory(self)
@@ -22,6 +27,10 @@ class TrainingSession:
         # This is the PROCESS-SAFE queue for the TF-Agents environment.
         self.mp_replay_queue: mp.Queue[Any] | None = None
 
+    @property
+    def target_episodes(self):
+        return self.amount_of_cycles * self.episodes_per_cycle
+
 
 class SessionManager:
     """A singleton to manage all active training sessions."""
@@ -30,9 +39,9 @@ class SessionManager:
         self._sessions: dict[str, TrainingSession] = {}
         self._lock = Lock()
 
-    def create_session(self, level_json: dict, amount_of_episodes: int):
+    def create_session(self, request: "TrainRequest"):
         with self._lock:
-            session = TrainingSession(level_json, amount_of_episodes)
+            session = TrainingSession(request)
             self._sessions[session.session_id] = session
             return session
 

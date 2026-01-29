@@ -1,17 +1,26 @@
-from fastapi import FastAPI, WebSocket, BackgroundTasks, APIRouter
+from fastapi import WebSocket, BackgroundTasks, APIRouter
 from pydantic import BaseModel
 import asyncio
 from ai.sessions.session_manager import session_manager
 from ai.trainer.background_trainer import run_training_in_background
 import logging
-from ai.utils.log_bytes_size import log_bytes_size
+from ai.config import config
 
 router = APIRouter()
 
 
 class TrainRequest(BaseModel):
-    level: dict  # base64 encoded dill object
-    amount_of_episodes: int
+    level: dict
+    amount_of_cycles: int
+    episodes_per_cycle: int
+
+
+@router.get("/init")
+async def init():
+    return {
+        "message": "AI Delver Intelligence API is up and running.",
+        "env_batch_size": config.ENV_BATCH_SIZE,
+    }
 
 
 @router.post("/train")
@@ -20,9 +29,7 @@ async def train_agent(request: TrainRequest, background_tasks: BackgroundTasks):
     Receives a training request, creates a session, starts training in the
     background, and immediately returns the session ID.
     """
-    new_session = session_manager.create_session(
-        request.level, request.amount_of_episodes
-    )
+    new_session = session_manager.create_session(request)
 
     background_tasks.add_task(run_training_in_background, new_session.session_id)
 
