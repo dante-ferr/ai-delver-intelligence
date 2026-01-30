@@ -3,7 +3,6 @@ from api.server import app as api_app
 from tf_agents.system import multiprocessing as tf_mp
 import logging
 import tensorflow as tf
-from tensorflow.keras import mixed_precision
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -35,17 +34,12 @@ def setup_and_check_hardware():
                 f"✅ GPU DETECTED: {details.get('device_name', 'Unknown')} ({gpu.name})"
             )
 
-        # Configure mixed precision
-        policy = mixed_precision.Policy("mixed_float16")
-        mixed_precision.set_global_policy(policy)
-        logging.info("✅ Mixed Precision (float16) enabled.")
-
-        # Tensor Core Check
+        # Tensor Core Check (Running in standard float32)
         with tf.device("/device:GPU:0"):
             a = tf.constant([[1.0, 2.0], [3.0, 4.0]])
             b = tf.constant([[1.0, 1.0], [0.0, 1.0]])
             c = tf.matmul(a, b)
-            logging.info(f"⚡ Tensor Core Test: Success. Result shape: {c.shape}")
+            logging.info(f"⚡ GPU Math Test: Success. Result shape: {c.shape}")
 
     except RuntimeError as e:
         logging.error(f"❌ Hardware Setup Failed: {e}")

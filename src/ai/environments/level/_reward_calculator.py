@@ -1,5 +1,6 @@
 from ai.config import config
 from typing import TYPE_CHECKING
+import math
 
 if TYPE_CHECKING:
     from .simulation import Simulation
@@ -11,14 +12,13 @@ if TYPE_CHECKING:
 class RewardCalculator:
     """
     Encapsulates all reward calculation logic for the environment.
-    This class is responsible for calculating the reward at each step of the simulation,
-    including goal achievement, penalties, exploration, and distance-based rewards.
     """
 
     def __init__(self, level: "Level", dijkstra_grid: "DijkstraGrid"):
         self._level = level
         self.dijkstra_grid = dijkstra_grid
         self.last_distance: float = 0.0
+        self.last_delver_x: float = 0
 
     def reset(self, simulation: "Simulation"):
         """Resets the internal state for a new episode."""
@@ -45,29 +45,49 @@ class RewardCalculator:
         elif simulation.time_is_over:
             reward += config.NOT_FINISHED_REWARD
 
+        # Turn Penalty (Change of direction)
         if (
             simulation.last_action
             and simulation.last_action["run"] != 0
             and action["run"] != 0
             and simulation.last_action["run"] != action["run"]
         ):
-            reward += config.TURN_PENALTY
+            reward += config.TURN_REWARD
 
+        # Jump Cost (Intent based)
         if action["jump"]:
             reward += config.JUMP_REWARD
 
+        # Living Cost
         reward += config.FRAME_STEP_REWARD
 
+        # Exploration Reward
         if simulation.exploration_grid.step_on(simulation.delver.position, 1):
             reward += config.TILE_EXPLORATION_REWARD
 
-        if config.DISTANCE_REWARD_SCALE != 0.0:
+        # Dijkstra Distance Reward (The Compass)
+        if config.GOAL_DISTANCE_REWARD_SCALE != 0.0:
             current_dist = self._get_current_dijkstra_distance(simulation)
+
+            # Ensure valid distances before calculating delta
             if current_dist != -1.0 and self.last_distance != -1.0:
+                # Delta is positive if we got closer (last > current)
                 delta = self.last_distance - current_dist
-                reward += delta * config.DISTANCE_REWARD_SCALE
+                reward += delta * config.GOAL_DISTANCE_REWARD_SCALE
 
             if current_dist != -1.0:
                 self.last_distance = current_dist
+
+        # Wall Hugging penalty
+        current_delver_x = simulation.delver.position[0]
+        dx = abs(current_delver_x - self.last_delver_x)
+        if (
+            action["run"] != 0  # -1 is left and 1 is right, so 0 is not moving
+            and dx < 0.001  # Barely moving, which we can assume is a wall hug
+            and simulation.delver.is_on_ground
+        ):
+            reward += config.WALL_HUGGING_REWARD
+
+        self.last_delver_x = current_delver_x
 
         return reward

@@ -130,8 +130,7 @@ class Trainer:
 
     def _setup_replay_buffer(self, collect_data_spec):
         """
-        Sets up the replay buffer with selective float16 casting for observations
-        to save memory while preserving precision for critical fields.
+        Sets up the replay buffer
         """
 
         def _selective_cast(spec):
@@ -139,7 +138,7 @@ class Trainer:
                 # Don't cast BoundedTensorSpec (these are often important boundaries)
                 if not isinstance(spec, tensor_spec.BoundedTensorSpec):
                     return tensor_spec.TensorSpec(
-                        shape=spec.shape, dtype=tf.float16, name=spec.name
+                        shape=spec.shape, dtype=tf.float32, name=spec.name
                     )
             return spec
 

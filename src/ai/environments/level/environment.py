@@ -136,7 +136,9 @@ class LevelEnvironment(PyEnvironment):
                 name="local_view",
             ),
             "global_state": array_spec.ArraySpec(
-                shape=(6,), dtype=np.float16, name="global_state"
+                shape=(len(self.observation["global_state"]),),
+                dtype=np.float32,
+                name="global_state",
             ),
             "replay_json": array_spec.ArraySpec(
                 shape=(), dtype=str, name="replay_json"
@@ -272,19 +274,37 @@ class LevelEnvironment(PyEnvironment):
     @property
     def observation(self) -> "DelverObservation":
         """Constructs the current observation dictionary."""
-        lvl_w = max(1, self._level.map.size[0] * self._level.map.tile_size[0])
-        lvl_h = max(1, self._level.map.size[1] * self._level.map.tile_size[1])
+        delver = self.simulation.delver
+        goal = self.simulation.goal
+
+        norm_goal_vector = (
+            (goal.position[0] - delver.position[0])
+            / config.DELVER_GOAL_DISTANCE_NORM[0],
+            (goal.position[1] - delver.position[1])
+            / config.DELVER_GOAL_DISTANCE_NORM[1],
+        )
+        norm_delver_velocity = (
+            delver.velocity[0] / delver.MAX_SPEED[0],
+            delver.velocity[1] / delver.MAX_SPEED[1],
+        )
+        # It's important to let the intelligence know the Delver's offset on the grid in order to make
+        # the local view observation precise, as it's based on the grid instead of the actual pixel position.
+        norm_delver_offset = (
+            (delver.position[0] % config.TILE_WIDTH) / config.TILE_WIDTH,
+            (delver.position[1] % config.TILE_HEIGHT) / config.TILE_HEIGHT,
+        )
 
         global_state = np.array(
             [
-                self.delver_position[0] / lvl_w,
-                self.delver_position[1] / lvl_h,
-                self.simulation.delver.velocity[0] / 500.0,
-                self.simulation.delver.velocity[1] / 1000.0,
-                self.goal_position[0] / lvl_w,
-                self.goal_position[1] / lvl_h,
+                *norm_goal_vector,
+                *norm_delver_velocity,
+                *norm_delver_offset,
+                # Passing the is_on_ground data is good because the intelligence won't need to figure out
+                # whether the delver is on the ground or not by the local view and delver offset (it's a
+                # challenging correlation).
+                float(self.simulation.delver.is_on_ground),
             ],
-            dtype=np.float16,
+            dtype=np.float32,
         )
 
         return {

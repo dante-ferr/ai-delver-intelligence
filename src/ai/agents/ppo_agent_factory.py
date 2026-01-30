@@ -18,8 +18,7 @@ if TYPE_CHECKING:
 
 class CategoricalOutputSpec:
     """
-    A helper class to act as a distribution spec.
-    Fixes the 'CategoricalOutputSpec' object has no attribute 'build_distribution' error.
+    Helper class to act as a distribution spec for categorical outputs.
     """
 
     def __init__(self, sample_spec):
@@ -33,17 +32,12 @@ class CategoricalOutputSpec:
         }
 
     def build_distribution(self, logits=None, **kwargs):
-        """
-        Builds the Categorical distribution from the given logits.
-        This is required by tf_agents during the training step.
-        """
         return tfp.distributions.Categorical(logits=logits, dtype=self.dtype)
 
 
 class Float32CategoricalProjectionNetwork(network.DistributionNetwork):
     """
-    A custom projection network that forces float32 logits for numerical stability,
-    even when the rest of the model uses mixed precision (float16).
+    Forces float32 logits for numerical stability.
     """
 
     def __init__(
@@ -61,7 +55,6 @@ class Float32CategoricalProjectionNetwork(network.DistributionNetwork):
             input_tensor_spec=None, state_spec=(), output_spec=output_spec, name=name
         )
 
-        # Force float32 for the logits layer to avoid float16/float32 mismatches
         self._projection_layer = keras.layers.Dense(
             self._num_atoms,
             kernel_initializer=tf.compat.v1.initializers.random_uniform(
@@ -73,15 +66,15 @@ class Float32CategoricalProjectionNetwork(network.DistributionNetwork):
 
     def call(self, inputs, outer_rank=1, training=False, mask=None):
         logits = self._projection_layer(inputs, training=training)
-        # We delegate the distribution creation to the spec/tfp, ensuring consistency
         distribution = self.output_spec.build_distribution(logits=logits)
         return distribution, ()
 
 
 class PPOAgentFactory:
     """
-    Factory class responsible for building the PPO Agent, including the Actor and Value
-    RNN networks and their respective preprocessing layers.
+    Constructs the PPO Agent.
+    Updated: Optimization for RTX 3050 (Float32 mode).
+    Reduced layer sizes to improve FPS without sacrificing necessary complexity.
     """
 
     def __init__(
@@ -113,7 +106,6 @@ class PPOAgentFactory:
             "local_view": local_view_preprocessing,
             "global_state": global_state_preprocessing,
             "replay_json": keras.layers.Lambda(
-                # replay_json is for external observers; we zero it out for the agent's input
                 lambda x: tf.zeros(shape=(tf.shape(x)[0], 0), dtype=compute_dtype)
             ),
         }
@@ -123,7 +115,7 @@ class PPOAgentFactory:
 
         input_fc_layer_params = (256, 128)
         lstm_size = (128,)
-        output_fc_layer_params = (128,)
+        output_fc_layer_params = (64,)
 
         discrete_projection_net = Float32CategoricalProjectionNetwork
 
@@ -170,5 +162,4 @@ class PPOAgentFactory:
         self.agent.initialize()
 
     def get_agent(self):
-        """Returns the initialized PPO agent."""
         return self.agent

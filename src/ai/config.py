@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 import os
-
+from level import config as level_config
 
 class Config:
     """
@@ -34,6 +34,13 @@ class Config:
 
         self.COLLECT_STEPS_PER_ITERATION = int(self.ENV_BATCH_SIZE * seconds * aps)
 
+        self.TILE_WIDTH = level_config.TILE_WIDTH
+        self.TILE_HEIGHT = level_config.TILE_HEIGHT
+        self.DELVER_GOAL_DISTANCE_NORM = [
+            level_config.MAX_GRID_SIZE[0] * self.TILE_WIDTH,
+            level_config.MAX_GRID_SIZE[1] * self.TILE_HEIGHT,
+        ]
+
     def _load_config(self) -> dict:
         try:
             with open(self._config_path, "r") as f:
@@ -54,7 +61,7 @@ class Config:
             "frame_step_reward",
             "tile_exploration_reward",
             "jump_reward",
-            "distance_reward_scale",
+            "goal_distance_reward_scale",
         ]
 
         # 1. Find the Maximum Absolute Value (The Anchor)
