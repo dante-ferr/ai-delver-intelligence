@@ -20,6 +20,8 @@
   "actions_per_second": 10,
   "max_seconds_per_episode": 60,
 
+  "max_training_levels": 10,
+
   "log_interval": 10,
 
   "seed": 42

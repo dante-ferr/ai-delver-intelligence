@@ -15,7 +15,7 @@ class TrainingSession:
     """Holds all resources for a single, isolated training run."""
 
     def __init__(self, request: "TrainRequest"):
-        self.level_json: dict = request.level
+        self.level_jsons: list[dict] = request.levels
         self.amount_of_cycles = request.amount_of_cycles
         self.episodes_per_cycle = request.episodes_per_cycle
 

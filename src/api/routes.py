@@ -10,7 +10,7 @@ router = APIRouter()
 
 
 class TrainRequest(BaseModel):
-    level: dict
+    levels: list[dict]
     amount_of_cycles: int
     episodes_per_cycle: int
 
@@ -20,6 +20,7 @@ async def init():
     return {
         "message": "AI Delver Intelligence API is up and running.",
         "env_batch_size": config.ENV_BATCH_SIZE,
+        "max_training_levels": config.MAX_TRAINING_LEVELS,
     }
 
 

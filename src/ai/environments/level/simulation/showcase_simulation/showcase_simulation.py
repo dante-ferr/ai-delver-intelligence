@@ -18,7 +18,7 @@ class ShowcaseSimulation(Simulation):
         super().__init__(level)
 
         self.episode_trajectory = EpisodeTrajectory(
-            actions_per_second=config.ACTIONS_PER_SECOND
+            actions_per_second=config.ACTIONS_PER_SECOND, level_hash=level.to_hash()
         )
 
     def step(self, action: "DelverAction"):
