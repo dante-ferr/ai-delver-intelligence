@@ -4,7 +4,7 @@ import shutil
 import os
 import logging
 import tensorflow as tf
-from tf_agents.networks import network
+from tensorflow.python.trackable import autotrackable
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
@@ -19,29 +19,25 @@ class TrainerModelManager:
         """
         Saves the agent's policy to a temporary directory, archives it as a zip file,
         and returns the resulting bytes.
-
-        Returns:
-            None | bytes:   A byte string representing the zipped model policy,
-                            or None if an error occurs.
         """
         try:
-            # Create a PolicySaver instance to handle the saving process.
-            saver = policy_saver.PolicySaver(self.trainer.agent.policy)
+            agent = self.trainer.agent_manager.agent
+            if not agent:
+                logging.error("Cannot serialize model: Agent not initialized.")
+                return None
 
-            # Use a temporary directory that will be automatically cleaned up.
+            saver = policy_saver.PolicySaver(agent.policy)
+
             with tempfile.TemporaryDirectory() as temp_dir:
                 policy_dir = os.path.join(temp_dir, "policy")
 
-                # Save the policy to the temporary directory.
                 saver.save(policy_dir)
 
-                # Archive the contents of the policy directory into a zip file.
                 archive_base_name = os.path.join(temp_dir, "model_archive")
                 archive_path = shutil.make_archive(
                     base_name=archive_base_name, format="zip", root_dir=policy_dir
                 )
 
-                # Read the generated zip file into memory as bytes.
                 with open(archive_path, "rb") as f:
                     model_bytes = f.read()
 
@@ -54,32 +50,37 @@ class TrainerModelManager:
             return None
 
     def load_serialized_model(self, model_bytes: bytes) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Write the model bytes to a temporary zip file.
-            zip_path = os.path.join(temp_dir, "model.zip")
-            with open(zip_path, "wb") as f:
-                f.write(model_bytes)
+        try:
+            agent = self.trainer.agent_manager.agent
+            if not agent:
+                logging.error("Cannot load model: Agent not initialized.")
+                return
 
-            # Unpack the archive into a dedicated policy directory.
-            policy_dir = os.path.join(temp_dir, "policy")
-            shutil.unpack_archive(zip_path, policy_dir)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                zip_path = os.path.join(temp_dir, "model.zip")
+                with open(zip_path, "wb") as f:
+                    f.write(model_bytes)
 
-            loaded_policy = tf.saved_model.load(policy_dir)
+                policy_dir = os.path.join(temp_dir, "policy")
+                shutil.unpack_archive(zip_path, policy_dir)
 
-            # The loaded_policy object is an AutoTrackable, but at runtime it contains
-            # the model's learned parameters in its .variables attribute. Pylance
-            # cannot infer this specific structure, so we use # type: ignore to
-            # suppress the false-positive error.
-            loaded_weights = [v.numpy() for v in loaded_policy.variables]  # type: ignore
+                loaded_policy = tf.saved_model.load(policy_dir)
 
-            # For an agent like PPO, the policy is an ActorPolicy, which is known
-            # to have a .network attribute. We cast the general TFPolicy to this
-            # specific type to resolve the linter error.
-            policy = cast(actor_policy.ActorPolicy, self.trainer.agent.policy)
+                if not isinstance(loaded_policy, autotrackable.AutoTrackable):
+                    raise ValueError(
+                        "Loaded policy is not an instance of AutoTrackable."
+                    )
 
-            # The network attribute of the policy is the underlying Keras model.
-            policy.network.set_weights(loaded_weights)  # type: ignore
+                # type: ignore - Pylance cannot infer .variables on AutoTrackable
+                loaded_weights = [v.numpy() for v in loaded_policy.variables]
 
-            logging.info(
-                "Successfully loaded weights from the provided model into the agent's policy network."
-            )
+                policy = cast(actor_policy.ActorPolicy, agent.policy)
+
+                # type: ignore - .network is part of ActorPolicy
+                policy.network.set_weights(loaded_weights)
+
+                logging.info(
+                    "Successfully loaded weights from the provided model into the agent's policy network."
+                )
+        except Exception as e:
+            logging.error(f"Failed to load serialized model: {e}")

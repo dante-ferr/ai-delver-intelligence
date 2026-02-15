@@ -9,7 +9,7 @@
   
   "frame_step_reward": -0.01,
   "tile_exploration_reward": 0.04,
-  "jump_reward": -0.5,
+  "jump_reward": -0.15,
   "wall_hugging_reward": -0.2,
   
   "goal_distance_reward_scale": 0.005,
@@ -19,6 +19,11 @@
   "collect_seconds_per_env": 15,
   "actions_per_second": 10,
   "max_seconds_per_episode": 60,
+
+  "dynamic_exam_pass_reward": 90,
+  "dynamic_target_reward": 95,
+  "dynamic_min_episodes": 50,
+  "dynamic_max_episodes": 1000,
 
   "max_training_levels": 10,
 

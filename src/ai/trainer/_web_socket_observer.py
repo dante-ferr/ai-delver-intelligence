@@ -1,6 +1,5 @@
 import asyncio
 import tensorflow as tf
-import numpy as np
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -13,11 +12,7 @@ class WebSocketObserver:
         self._loop = loop
 
     def _send_to_queue(self, json_tensor: tf.Tensor):
-        for (
-            json_string_bytes
-        ) in (
-            json_tensor.numpy()
-        ):  # we're ignoring pylance's false-positive, because json_tensor in fact has a numpy method  # type: ignore
+        for json_string_bytes in json_tensor.numpy():  # type: ignore
             if json_string_bytes:
                 json_string = json_string_bytes.decode("utf-8")
                 self._loop.call_soon_threadsafe(
@@ -31,10 +26,9 @@ class WebSocketObserver:
         """
         replay_json_tensor = trajectory.observation["replay_json"]
 
-        # ✅ THE FIX: We must RETURN the operation created by tf.py_function.
-        # This ensures that a valid operation (not None) is passed to the driver.
+        # Return the operation created by tf.py_function so it is executed by the driver.
         return tf.py_function(
             func=self._send_to_queue,
             inp=[replay_json_tensor],
-            Tout=[],  # This function does not return any tensors back to the graph.
+            Tout=[],
         )

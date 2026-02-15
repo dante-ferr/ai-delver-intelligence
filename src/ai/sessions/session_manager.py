@@ -4,7 +4,7 @@ from typing import Any
 import asyncio
 import multiprocessing as mp
 import logging
-from ai.trainer._trainer_factory import trainer_factory
+from ai.trainer.trainer_factory import trainer_factory
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,6 +18,7 @@ class TrainingSession:
         self.level_jsons: list[dict] = request.levels
         self.amount_of_cycles = request.amount_of_cycles
         self.episodes_per_cycle = request.episodes_per_cycle
+        self.level_transitioning_mode = request.level_transitioning_mode
 
         self.session_id: str = str(uuid.uuid4())
         self.trainer = trainer_factory(self)
@@ -26,10 +27,6 @@ class TrainingSession:
         self.replay_queue: asyncio.Queue[Any] = asyncio.Queue()
         # This is the PROCESS-SAFE queue for the TF-Agents environment.
         self.mp_replay_queue: mp.Queue[Any] | None = None
-
-    @property
-    def target_episodes(self):
-        return self.amount_of_cycles * self.episodes_per_cycle
 
 
 class SessionManager:

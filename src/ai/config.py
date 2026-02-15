@@ -62,6 +62,8 @@ class Config:
             "tile_exploration_reward",
             "jump_reward",
             "goal_distance_reward_scale",
+            "dynamic_exam_pass_reward",
+            "dynamic_target_reward",
         ]
 
         # 1. Find the Maximum Absolute Value (The Anchor)

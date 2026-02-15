@@ -2,10 +2,6 @@ import logging
 import multiprocessing as std_mp
 from ai.sessions.session_manager import session_manager
 from ai.sessions import REGISTRY_LOCK, SESSION_REGISTRY
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import asyncio
 
 
 def run_training_in_background(session_id: str):

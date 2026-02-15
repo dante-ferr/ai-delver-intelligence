@@ -1,6 +1,5 @@
 from ai.config import config
 from typing import TYPE_CHECKING
-import math
 
 if TYPE_CHECKING:
     from .simulation import Simulation

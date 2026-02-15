@@ -10,9 +10,15 @@ def trainer_factory(
     session: "TrainingSession",
     model_bytes: None | bytes = None,
 ):
-    from ai.trainer import Trainer
+    from ai.trainer.trainer import Trainer
+    from ai.trainer.dynamic_trainer.dynamic_trainer import DynamicTrainer
 
-    trainer = Trainer(
+    if session.level_transitioning_mode == "dynamic":
+        trainer_class = DynamicTrainer
+    else:
+        trainer_class = Trainer
+
+    trainer = trainer_class(
         session=session,
         model_bytes=model_bytes,
         loop=asyncio.get_running_loop(),

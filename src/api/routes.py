@@ -5,14 +5,16 @@ from ai.sessions.session_manager import session_manager
 from ai.trainer.background_trainer import run_training_in_background
 import logging
 from ai.config import config
+from typing import Literal, Optional
 
 router = APIRouter()
 
 
 class TrainRequest(BaseModel):
     levels: list[dict]
-    amount_of_cycles: int
+    amount_of_cycles: Optional[int]
     episodes_per_cycle: int
+    level_transitioning_mode: Literal["static", "dynamic"]
 
 
 @router.get("/init")
@@ -70,9 +72,9 @@ async def websocket_training_endpoint(websocket: WebSocket, session_id: str):
 
     try:
         while session_manager.get_session(session_id):
-            replay_string = await replay_queue.get()
+            replay_data = await replay_queue.get()
 
-            if replay_string == "end":
+            if replay_data == "end":
                 logging.info(
                     f"WebSocket for session {session_id} is preparing to close."
                 )
@@ -80,7 +82,12 @@ async def websocket_training_endpoint(websocket: WebSocket, session_id: str):
                 await websocket.close()
                 break
 
-            await websocket.send_json({"trajectory": replay_string})
+            if isinstance(replay_data, dict) and "error" in replay_data:
+                await websocket.send_json(replay_data)
+                await websocket.close()
+                break
+
+            await websocket.send_json({"trajectory": replay_data})
 
     except asyncio.CancelledError:
         logging.warning(f"WebSocket for session {session_id} was cancelled.")

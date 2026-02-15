@@ -3,7 +3,6 @@ from tf_agents.environments import PyEnvironment
 from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
 import numpy as np
-from typing import cast, TYPE_CHECKING
 import time
 from functools import cached_property
 from .simulation import Simulation
@@ -15,6 +14,7 @@ from ai.sessions import REGISTRY_LOCK, SESSION_REGISTRY
 from level import Level
 from ._dijkstra_grid import DijkstraGrid
 from ai.config import config
+from typing import cast, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ._delver_observation import DelverObservation
