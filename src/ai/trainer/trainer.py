@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 BENCHMARK_MODE = False
 
+
 class Trainer:
     """
     Orchestrates the training lifecycle.
@@ -38,6 +39,7 @@ class Trainer:
 
         self.training_cycles = session.amount_of_cycles or 0
         self.episodes_per_cycle = session.episodes_per_cycle
+        self.levels_trained = 0
 
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         self.summary_writer = create_file_writer(f"logs/train/{current_time}")
@@ -76,6 +78,7 @@ class Trainer:
 
         with self.summary_writer.as_default():
             for level_idx, level_json in enumerate(self.session.level_jsons):
+                self.levels_trained = level_idx
                 if self._is_interrupted:
                     break
 
@@ -185,10 +188,21 @@ class Trainer:
         self.agent_manager.clear_buffer()
         gc.collect()
 
+        # Send level transition message separately
+        self.session.replay_queue.put_nowait(
+            {"type": "level_transition", "levels_trained": self.levels_trained}
+        )
+
     def _run_showcase(self, episode_count: int) -> None:
         try:
             replay_json = self.evaluator.run_showcase(self.agent_manager.get_policy())
-            self.session.replay_queue.put_nowait(replay_json)
+            self.session.replay_queue.put_nowait(
+                {
+                    "type": "showcase",
+                    "trajectory": replay_json,
+                    "level_episode_count": str(episode_count),
+                }
+            )
         except Exception as e:
             logging.error(f"Showcase failed: {e}")
 

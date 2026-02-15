@@ -87,7 +87,7 @@ async def websocket_training_endpoint(websocket: WebSocket, session_id: str):
                 await websocket.close()
                 break
 
-            await websocket.send_json({"trajectory": replay_data})
+            await websocket.send_json(replay_data)
 
     except asyncio.CancelledError:
         logging.warning(f"WebSocket for session {session_id} was cancelled.")
